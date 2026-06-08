@@ -86,6 +86,18 @@ class SyncScriptTests(unittest.TestCase):
         self.assertIn("https://[REDACTED:url-userinfo]@example.com/path?access_token=[REDACTED:url-query-access-token]&ok=1", redacted)
         self.assertIn("wss://[REDACTED:url-userinfo]@example.com/actors/gateway?rvt-token=[REDACTED:url-query-rvt-token]&sessionid=[REDACTED:url-query-sessionid]", redacted)
 
+    def test_redact_text_handles_userinfo_url_with_malformed_port(self):
+        from redact import redact_text
+
+        redacted = redact_text(
+            "connect https://user:secret@example.com:notaport/path?token=query-secret"
+        )
+
+        self.assertNotIn("user:secret", redacted)
+        self.assertNotIn("query-secret", redacted)
+        self.assertIn("[REDACTED:url-userinfo]@example.com:notaport", redacted)
+        self.assertIn("token=[REDACTED:url-query-token]", redacted)
+
     def test_redact_json_masks_sensitive_keys_and_skips_image_payloads(self):
         from redact import redact_json
 
@@ -1206,46 +1218,6 @@ class PluginManifestTests(unittest.TestCase):
             for hook in config.get("hooks", [])
         ]
         self.assertTrue(any("commit_trailer.py" in command for command in commands))
-
-
-class HookInstallTests(unittest.TestCase):
-    def test_install_and_uninstall_hooks_preserves_non_jieli_hooks(self):
-        from install_hooks import install_hooks, uninstall_hooks
-
-        settings = {
-            "hooks": {
-                "UserPromptSubmit": [
-                    {
-                        "matcher": "",
-                        "hooks": [{"type": "command", "command": "echo keep-me"}],
-                    }
-                ]
-            }
-        }
-
-        installed = install_hooks(settings, plugin_root="/plugins/claude-code", version="0.1.1")
-        commands = [
-            hook["command"]
-            for config in installed["hooks"]["UserPromptSubmit"]
-            for hook in config["hooks"]
-        ]
-        self.assertIn("echo keep-me", commands)
-        self.assertTrue(
-            any(
-                "sync.py" in command
-                and "--trigger userpromptsubmit" in command
-                and "--hook-version 0.1.1" in command
-                for command in commands
-            )
-        )
-
-        uninstalled = uninstall_hooks(installed)
-        remaining = [
-            hook["command"]
-            for config in uninstalled["hooks"]["UserPromptSubmit"]
-            for hook in config["hooks"]
-        ]
-        self.assertEqual(remaining, ["echo keep-me"])
 
 
 if __name__ == "__main__":

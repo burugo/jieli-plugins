@@ -641,7 +641,6 @@ def transcript_signature(path: Path) -> tuple[int, int] | None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--trigger", default="")
-    parser.add_argument("--hook-version", default="")
     parser.add_argument("--jieli-hook", action="store_true")
     args = parser.parse_args()
     try:

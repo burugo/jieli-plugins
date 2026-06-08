@@ -181,7 +181,6 @@ def read_mapping(home: Path) -> dict[str, Any]:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--hook-version", default="")
     parser.add_argument("--jieli-hook", action="store_true")
     parser.parse_args()
     raw = sys.stdin.read()

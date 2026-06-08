@@ -273,6 +273,24 @@ def redact_urls(value: str) -> str:
     return URL_RE.sub(lambda match: redact_url(match.group(0)), value)
 
 
+def url_userinfo_suffix(parsed: SplitResult, netloc: str) -> str:
+    fallback = netloc.split("@", 1)[1]
+    try:
+        host = parsed.hostname or ""
+        port = parsed.port
+    except ValueError:
+        return fallback
+    if port:
+        host = f"{host}:{port}"
+    if (
+        parsed.hostname
+        and parsed.hostname.startswith("[")
+        and parsed.hostname.endswith("]")
+    ):
+        host = parsed.hostname
+    return host or fallback
+
+
 def redact_url(value: str) -> str:
     try:
         parsed = urlsplit(value)
@@ -282,16 +300,7 @@ def redact_url(value: str) -> str:
         return value
     netloc = parsed.netloc
     if "@" in netloc:
-        host = parsed.hostname or ""
-        if parsed.port:
-            host = f"{host}:{parsed.port}"
-        if (
-            parsed.hostname
-            and parsed.hostname.startswith("[")
-            and parsed.hostname.endswith("]")
-        ):
-            host = parsed.hostname
-        suffix = host or netloc.split("@", 1)[1]
+        suffix = url_userinfo_suffix(parsed, netloc)
         netloc = f"{typed_redaction('url-userinfo')}@{suffix}"
     query = redact_query(parsed.query)
     return urlunsplit(SplitResult(parsed.scheme, netloc, parsed.path, query, ""))
