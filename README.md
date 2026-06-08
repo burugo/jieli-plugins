@@ -2,7 +2,7 @@
 
 Plugins for syncing AI coding sessions to [Jieli](https://jieli.app).
 
-## Install
+## Claude Code Install
 
 Add the marketplace in Claude Code:
 
@@ -42,12 +42,43 @@ For self-hosted Jieli, also set:
 export JIELI_BASE_URL="https://your-jieli.example.com"
 ```
 
+## Codex Install
+
+Add the marketplace in Codex:
+
+```bash
+codex plugin marketplace add jieliapp/plugins
+```
+
+Install the plugin:
+
+```bash
+codex plugin add codex@jieli
+```
+
+Then enable the plugin and trust its hooks with `/hooks`.
+
+Set a Jieli API key in the environment used to start Codex:
+
+```bash
+export JIELI_API_KEY="your-jieli-api-key"
+```
+
+For self-hosted Jieli, also set:
+
+```bash
+export JIELI_BASE_URL="https://your-jieli.example.com"
+```
+
 ## What It Does
 
 - Syncs Claude Code sessions to Jieli threads.
+- Syncs local Codex sessions to Jieli threads.
 - Uploads pasted local images as Jieli attachments.
 - Adds `Claude-Code-Thread-ID` trailers to Claude-created git commits.
+- Adds best-effort `Jieli-Thread` trailers to simple Codex-created `git commit` commands.
 - Provides the `jieli` skill for reading Jieli thread links from Claude Code.
+- Provides the `jieli` skill for reading Jieli thread links from Codex.
 - Redacts common secrets before upload.
 
 ## Development
