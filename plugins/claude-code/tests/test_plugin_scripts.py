@@ -291,8 +291,8 @@ class SyncScriptTests(unittest.TestCase):
                 base_url="https://jieli.example.test",
             )
 
-        self.assertEqual(payload["repo"], "jieliapp/plugins")
-        self.assertEqual(payload["repo_url"], "https://github.com/jieliapp/plugins")
+        self.assertEqual(payload["repo"], "")
+        self.assertEqual(payload["repo_url"], "git@github.com:jieliapp/plugins.git")
 
     def test_build_payload_uses_self_hosted_git_remote_repo_url(self):
         from sync import build_payload_from_hook
@@ -330,8 +330,8 @@ class SyncScriptTests(unittest.TestCase):
                 base_url="https://jieli.example.test",
             )
 
-        self.assertEqual(payload["repo"], "team/project")
-        self.assertEqual(payload.get("repo_url"), "https://git.example.test/team/project")
+        self.assertEqual(payload["repo"], "")
+        self.assertEqual(payload["repo_url"], "git@git.example.test:team/project.git")
 
     def test_build_payload_leaves_repo_empty_without_github_remote(self):
         from sync import build_payload_from_hook
