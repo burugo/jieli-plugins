@@ -86,6 +86,7 @@ def build_payload_from_hook(hook_data: dict[str, Any], base_url: str | None = No
     return {
         "provider": PROVIDER,
         "repo": repo_from_cwd(cwd),
+        "repo_url": repo_url_from_cwd(cwd),
         "branch": transcript.get("branch") or git_branch(cwd),
         "source_url": f"{base}/threads/{provider_thread_id}",
         "labels": ["codex"],
@@ -429,6 +430,73 @@ def repo_from_cwd(cwd: str) -> str:
     return parts[0] if parts else ""
 
 
+def repo_url_from_cwd(cwd: str) -> str:
+    remote = git_config(cwd, "remote.origin.url")
+    return repo_url_from_repository_url(remote)
+
+
+def repo_url_from_repository_url(raw: str) -> str:
+    value = raw.strip().strip("/")
+    if not value:
+        return ""
+    if value.endswith(".git"):
+        value = value[:-4]
+    if value.startswith(("http://", "https://")):
+        return clean_http_repo_url(value)
+    if value.startswith("ssh://"):
+        return repo_url_from_ssh_url(value)
+    return repo_url_from_scp_url(value)
+
+
+def clean_http_repo_url(value: str) -> str:
+    from urllib.parse import urlparse
+
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return ""
+    repo = valid_repo_path(parsed.path)
+    if not repo:
+        return ""
+    return f"{parsed.scheme}://{parsed.netloc}/{repo}"
+
+
+def repo_url_from_ssh_url(value: str) -> str:
+    from urllib.parse import urlparse
+
+    parsed = urlparse(value)
+    if parsed.scheme != "ssh" or not parsed.hostname:
+        return ""
+    repo = valid_repo_path(parsed.path)
+    if not repo:
+        return ""
+    return f"https://{parsed.hostname}/{repo}"
+
+
+def repo_url_from_scp_url(value: str) -> str:
+    if ":" not in value:
+        return ""
+    host_part, path = value.split(":", 1)
+    if "/" in host_part:
+        return ""
+    host = host_part.rsplit("@", 1)[-1]
+    repo = valid_repo_path(path)
+    if not host or not repo:
+        return ""
+    return f"https://{host}/{repo}"
+
+
+def valid_repo_path(raw: str) -> str:
+    path = raw.strip().strip("/")
+    if path.endswith(".git"):
+        path = path[:-4]
+    parts = path.split("/")
+    if len(parts) < 2:
+        return ""
+    if all(re.fullmatch(r"[A-Za-z0-9_.-]+", part) for part in parts):
+        return "/".join(parts)
+    return ""
+
+
 def timestamp_ms(value: Any) -> int:
     if isinstance(value, (int, float)):
         return int(value)
@@ -442,9 +510,14 @@ def timestamp_ms(value: Any) -> int:
 
 
 def git_branch(cwd: str) -> str:
+    branch = git_config(cwd, "--abbrev-ref", "HEAD", git_command="rev-parse")
+    return branch
+
+
+def git_config(cwd: str, *args: str, git_command: str = "config") -> str:
     try:
         result = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            ["git", git_command, *args],
             cwd=cwd or None,
             check=False,
             stdout=subprocess.PIPE,

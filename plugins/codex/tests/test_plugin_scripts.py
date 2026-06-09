@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import threading
@@ -203,6 +204,48 @@ class CodexSyncScriptTests(unittest.TestCase):
         self.assertEqual(len(payload["thread"]["messages"]), 1)
         self.assertEqual(payload["thread"]["messages"][0]["content"], "real request")
         self.assertEqual(payload["thread"]["title"], "real request")
+
+    def test_build_payload_includes_repo_url_from_git_remote(self):
+        from sync import build_payload_from_hook
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo = Path(tmpdir) / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init"], cwd=repo, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(
+                ["git", "remote", "add", "origin", "git@github.com:jieliapp/plugins.git"],
+                cwd=repo,
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            transcript = Path(tmpdir) / "session.jsonl"
+            transcript.write_text(
+                json.dumps({"type": "session_meta", "payload": {"id": "codex-repo-url", "cwd": str(repo)}})
+                + "\n"
+                + json.dumps(
+                    {
+                        "type": "response_item",
+                        "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "sync repo url"}]},
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            payload = build_payload_from_hook(
+                {"session_id": "codex-repo-url", "transcript_path": str(transcript)},
+                base_url="https://jieli.example.test",
+            )
+
+        self.assertEqual(payload["repo_url"], "https://github.com/jieliapp/plugins")
+
+    def test_repo_url_from_repository_url_normalizes_supported_remotes(self):
+        from sync import repo_url_from_repository_url
+
+        self.assertEqual(repo_url_from_repository_url("https://github.com/jieliapp/plugins.git"), "https://github.com/jieliapp/plugins")
+        self.assertEqual(repo_url_from_repository_url("git@github.com:jieliapp/plugins.git"), "https://github.com/jieliapp/plugins")
+        self.assertEqual(repo_url_from_repository_url("ssh://git@github.com/jieliapp/plugins.git"), "https://github.com/jieliapp/plugins")
 
     def test_find_session_transcript_uses_codex_home_sessions(self):
         from sync import find_session_transcript
