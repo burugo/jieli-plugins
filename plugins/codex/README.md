@@ -1,6 +1,6 @@
 # Jieli Codex Sync
 
-Sync local Codex sessions to Jieli threads, redact common secrets before upload, provide a `jieli` skill for reading synced threads, and add best-effort `Jieli-Thread` trailers to Codex-created git commits.
+Sync local Codex sessions to Jieli threads, redact common secrets before upload, provide a `jieli` skill for reading synced threads, and add best-effort `Codex-Thread-ID` trailers to Codex-created git commits.
 
 ## Configuration
 
@@ -43,10 +43,10 @@ The plugin syncs on:
 The `PreToolUse(Bash)` hook attempts to rewrite simple `git commit` commands by appending:
 
 ```text
---trailer "Jieli-Thread: https://jieli.app/threads/T-..."
+--trailer "Codex-Thread-ID: https://jieli.app/threads/T-..."
 ```
 
-It only rewrites simple commands that parse as `git commit`. It does not rewrite commands containing shell chaining, pipes, heredocs, subshells, backgrounding, or multiple lines. It does not install Git hooks and does not affect commits made outside Codex.
+It rewrites commands that contain exactly one top-level `git commit`, including common `&&` chains such as `git status && git add ... && git commit ...`. It does not rewrite commands containing pipes, heredocs, subshells, backgrounding, multiple commits, or multiple lines. It does not install Git hooks and does not affect commits made outside Codex.
 
 ## Local State
 

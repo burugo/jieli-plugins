@@ -294,7 +294,11 @@ def message_from_response_item(
         return normalize_response_message(payload, line_number, image_uploader, data_image_uploader)
     if item_type == "function_call":
         return normalize_function_call(payload, line_number)
+    if item_type == "custom_tool_call":
+        return normalize_custom_tool_call(payload, line_number)
     if item_type == "function_call_output":
+        return normalize_function_output(payload, line_number)
+    if item_type == "custom_tool_call_output":
         return normalize_function_output(payload, line_number)
     return None
 
@@ -588,6 +592,25 @@ def normalize_function_call(payload: dict[str, Any], line_number: int) -> dict[s
     }
 
 
+def normalize_custom_tool_call(payload: dict[str, Any], line_number: int) -> dict[str, Any] | None:
+    call_id = str(payload.get("call_id") or payload.get("id") or f"call-{line_number}")
+    name = str(payload.get("name") or "")
+    if not name:
+        return None
+    return {
+        "role": "assistant",
+        "message_id": call_id,
+        "content": [
+            {
+                "type": "tool_use",
+                "id": call_id,
+                "name": name,
+                "input": parse_custom_tool_input(name, payload.get("input")),
+            }
+        ],
+    }
+
+
 def normalize_function_output(payload: dict[str, Any], line_number: int) -> dict[str, Any] | None:
     call_id = str(payload.get("call_id") or payload.get("id") or f"output-{line_number}")
     output = payload.get("output")
@@ -617,6 +640,15 @@ def parse_tool_arguments(value: Any) -> Any:
         except json.JSONDecodeError:
             return redact_text(value)
         return redact_json(parsed)
+    return redact_json(value)
+
+
+def parse_custom_tool_input(name: str, value: Any) -> Any:
+    if isinstance(value, str):
+        text = redact_text(value)
+        if name.strip().lower() == "apply_patch":
+            return {"patch_text": text}
+        return {"input": text}
     return redact_json(value)
 
 

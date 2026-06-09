@@ -14,8 +14,8 @@ from typing import Any
 import sync
 
 
-TRAILER_KEY = "Jieli-Thread"
-AMBIGUOUS_TOKENS = ["&&", "||", ";", "\n", "$(", "`", "<<", "|", "&"]
+TRAILER_KEY = "Codex-Thread-ID"
+AMBIGUOUS_TOKENS = ["||", ";", "\n", "$(", "`", "<<", "|"]
 
 
 def build_hook_response(hook_data: dict[str, Any], home: Path | None = None) -> dict[str, Any]:
@@ -82,20 +82,81 @@ def updated_commit_command(command: str, session_id: str, home: Path) -> str:
 
 
 def inject_trailer(command: str, trailer: str) -> str:
+    parts = split_top_level_and_chain(command)
+    if not parts:
+        return ""
+    updated_parts: list[str] = []
+    updated_count = 0
+    for part in parts:
+        if part == "&&":
+            updated_parts.append(part)
+            continue
+        updated_part = append_trailer_to_commit_segment(part, trailer)
+        if updated_part:
+            updated_count += 1
+            if updated_count > 1:
+                return ""
+            updated_parts.append(updated_part)
+        else:
+            updated_parts.append(part)
+    return "".join(updated_parts) if updated_count == 1 else ""
+
+
+def split_top_level_and_chain(command: str) -> list[str]:
+    parts: list[str] = []
+    start = 0
+    quote = ""
+    escaped = False
+    i = 0
+    while i < len(command):
+        char = command[i]
+        if escaped:
+            escaped = False
+            i += 1
+            continue
+        if char == "\\":
+            escaped = True
+            i += 1
+            continue
+        if quote:
+            if char == quote:
+                quote = ""
+            i += 1
+            continue
+        if char in ("'", '"'):
+            quote = char
+            i += 1
+            continue
+        if command.startswith("&&", i):
+            parts.append(command[start:i])
+            parts.append("&&")
+            i += 2
+            start = i
+            continue
+        if char == "&":
+            return []
+        i += 1
+    if quote or escaped:
+        return []
+    parts.append(command[start:])
+    return parts
+
+
+def append_trailer_to_commit_segment(segment: str, trailer: str) -> str:
     try:
-        parts = shlex.split(command)
+        parts = shlex.split(segment)
     except ValueError:
         return ""
     if len(parts) < 2 or parts[0] != "git" or parts[1] != "commit":
         return ""
     if any(TRAILER_KEY in part for part in parts):
         return ""
-    pathspec_index = find_standalone_double_dash(command)
+    pathspec_index = find_standalone_double_dash(segment)
     if pathspec_index >= 0:
-        prefix = command[:pathspec_index].rstrip()
-        suffix = command[pathspec_index:].lstrip()
+        prefix = segment[:pathspec_index].rstrip()
+        suffix = segment[pathspec_index:].lstrip()
         return f'{prefix} --trailer "{trailer}" {suffix}'
-    return f'{command} --trailer "{trailer}"'
+    return f'{segment} --trailer "{trailer}"'
 
 
 def find_standalone_double_dash(command: str) -> int:

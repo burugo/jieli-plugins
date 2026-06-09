@@ -157,6 +157,81 @@ class CodexSyncScriptTests(unittest.TestCase):
         self.assertNotIn("private reasoning", raw_payload)
         self.assertNotIn("encrypted", raw_payload)
 
+    def test_build_payload_normalizes_custom_apply_patch_calls_for_jieli(self):
+        from sync import build_payload_from_hook
+
+        patch_text = """*** Begin Patch
+*** Update File: route_test.go
+@@
+-old
++new
+*** End Patch
+"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            transcript = Path(tmpdir) / "session.jsonl"
+            transcript.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "type": "session_meta",
+                                "payload": {"id": "codex-custom-tool", "cwd": "/Users/alice/work/jieli"},
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "type": "response_item",
+                                "payload": {
+                                    "type": "message",
+                                    "role": "user",
+                                    "content": [{"type": "input_text", "text": "fix route test"}],
+                                },
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "type": "response_item",
+                                "payload": {
+                                    "type": "custom_tool_call",
+                                    "status": "completed",
+                                    "call_id": "call-patch",
+                                    "name": "apply_patch",
+                                    "input": patch_text,
+                                },
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "type": "response_item",
+                                "payload": {
+                                    "type": "custom_tool_call_output",
+                                    "call_id": "call-patch",
+                                    "output": "Exit code: 0\nOutput:\nSuccess. Updated route_test.go\n",
+                                },
+                            }
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            payload = build_payload_from_hook(
+                {"session_id": "codex-custom-tool", "transcript_path": str(transcript)},
+                base_url="https://jieli.example.test",
+            )
+
+        self.assertEqual([message["role"] for message in payload["thread"]["messages"]], ["user", "assistant", "tool"])
+        tool_use = payload["thread"]["messages"][1]["content"][0]
+        self.assertEqual(tool_use["type"], "tool_use")
+        self.assertEqual(tool_use["id"], "call-patch")
+        self.assertEqual(tool_use["name"], "apply_patch")
+        self.assertEqual(tool_use["input"], {"patch_text": patch_text})
+        tool_result = payload["thread"]["messages"][2]["content"][0]
+        self.assertEqual(tool_result["type"], "tool_result")
+        self.assertEqual(tool_result["tool_use_id"], "call-patch")
+        self.assertIn("Success. Updated route_test.go", tool_result["content"])
+
     def test_build_payload_skips_codex_internal_context_messages(self):
         from sync import build_payload_from_hook
 
@@ -729,7 +804,7 @@ Do not upload this loaded skill body.
 
 
 class CodexCommitTrailerTests(unittest.TestCase):
-    def test_updated_commit_command_injects_jieli_thread_trailer(self):
+    def test_updated_commit_command_injects_codex_thread_id_trailer(self):
         from commit_trailer import updated_commit_command
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -752,7 +827,38 @@ class CodexCommitTrailerTests(unittest.TestCase):
 
         self.assertEqual(
             updated,
-            'git commit -m "ship" --trailer "Jieli-Thread: https://jieli.example.test/threads/T-codex-1"',
+            'git commit -m "ship" --trailer "Codex-Thread-ID: https://jieli.example.test/threads/T-codex-1"',
+        )
+
+    def test_updated_commit_command_updates_git_commit_inside_top_level_and_chain(self):
+        from commit_trailer import updated_commit_command
+
+        command = (
+            "git status --short && "
+            "python3 -m unittest plugins/codex/tests/test_plugin_scripts.py && "
+            "git add plugins/codex/scripts/commit_trailer.py plugins/codex/tests/test_plugin_scripts.py && "
+            'git commit -m "fix: add codex thread trailers" -- plugins/codex/scripts/commit_trailer.py'
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            home = Path(tmpdir)
+            mapping_path = home / ".jieli" / "codex-sessions.json"
+            mapping_path.parent.mkdir(parents=True)
+            mapping_path.write_text(
+                json.dumps({"codex-chain": {"provider_thread_id": "T-codex-chain", "base_url": "https://jieli.example.test"}}),
+                encoding="utf-8",
+            )
+
+            updated = updated_commit_command(command, "codex-chain", home)
+
+        self.assertEqual(
+            updated,
+            (
+                "git status --short && "
+                "python3 -m unittest plugins/codex/tests/test_plugin_scripts.py && "
+                "git add plugins/codex/scripts/commit_trailer.py plugins/codex/tests/test_plugin_scripts.py && "
+                'git commit -m "fix: add codex thread trailers" '
+                '--trailer "Codex-Thread-ID: https://jieli.example.test/threads/T-codex-chain" -- plugins/codex/scripts/commit_trailer.py'
+            ),
         )
 
     def test_updated_commit_command_injects_before_pathspec_separator(self):
@@ -771,7 +877,7 @@ class CodexCommitTrailerTests(unittest.TestCase):
 
         self.assertEqual(
             updated,
-            'git commit -m "ship" --trailer "Jieli-Thread: https://jieli.example.test/threads/T-codex-1" -- path.txt',
+            'git commit -m "ship" --trailer "Codex-Thread-ID: https://jieli.example.test/threads/T-codex-1" -- path.txt',
         )
 
     def test_updated_commit_command_does_not_rewrite_complex_shell_or_existing_trailer(self):
@@ -786,9 +892,8 @@ class CodexCommitTrailerTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            self.assertEqual(updated_commit_command('git add . && git commit -m "ship"', "codex-1", home), "")
             self.assertEqual(updated_commit_command('git commit -m "ship" | cat', "codex-1", home), "")
-            self.assertEqual(updated_commit_command('git commit -m "ship" --trailer Jieli-Thread:old', "codex-1", home), "")
+            self.assertEqual(updated_commit_command('git commit -m "ship" --trailer Codex-Thread-ID:old', "codex-1", home), "")
 
     def test_build_hook_response_returns_updated_input_shape(self):
         from commit_trailer import build_hook_response
@@ -815,7 +920,7 @@ class CodexCommitTrailerTests(unittest.TestCase):
         self.assertEqual(output["hookEventName"], "PreToolUse")
         self.assertEqual(output["permissionDecision"], "allow")
         self.assertIn("updatedInput", output)
-        self.assertIn("Jieli-Thread: https://jieli.example.test/threads/T-codex-1", output["updatedInput"]["command"])
+        self.assertIn("Codex-Thread-ID: https://jieli.example.test/threads/T-codex-1", output["updatedInput"]["command"])
 
 
 class CodexReadThreadTests(unittest.TestCase):
