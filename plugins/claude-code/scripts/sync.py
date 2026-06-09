@@ -397,7 +397,7 @@ def normalize_content(content: Any, image_uploader: ImageUploader | None = None)
                 continue
             block_type = block.get("type")
             if block_type == "tool_result":
-                blocks.append(redact_json(block))
+                blocks.append(normalize_tool_result_block(block))
                 continue
             if block_type == "text":
                 text = block.get("text", "")
@@ -421,6 +421,70 @@ def normalize_content(content: Any, image_uploader: ImageUploader | None = None)
     if content is None:
         return None
     return redact_json(content)
+
+
+def normalize_tool_result_block(block: dict[str, Any]) -> dict[str, Any]:
+    redacted = redact_json(block)
+    if not isinstance(redacted, dict):
+        return {"type": "tool_result", "content": "", "run": {"status": "completed", "result": {"output": ""}}}
+
+    tool_use_id = redacted.get("tool_use_id") or redacted.get("toolUseID")
+    content = redacted.get("content", "")
+    run = redacted.get("run") if isinstance(redacted.get("run"), dict) else {}
+    result = run.get("result") if isinstance(run, dict) else None
+    output = tool_result_output(result, content)
+    exit_code = tool_result_exit_code(result)
+
+    normalized: dict[str, Any] = {"type": "tool_result", "content": content}
+    if isinstance(tool_use_id, str) and tool_use_id:
+        normalized["tool_use_id"] = tool_use_id
+
+    result_block: dict[str, Any] = {"output": output}
+    if exit_code is not None:
+        result_block["exitCode"] = exit_code
+    normalized["run"] = {
+        "status": normalize_tool_status(run.get("status") if isinstance(run, dict) else None, redacted.get("is_error")),
+        "result": result_block,
+    }
+    return normalized
+
+
+def tool_result_output(result: Any, content: Any) -> str:
+    if isinstance(result, dict):
+        output = result.get("output")
+        if isinstance(output, str):
+            return output
+        nested_content = result.get("content")
+        if nested_content is not None:
+            return tool_result_output(None, nested_content)
+    if isinstance(result, str):
+        return result
+    if isinstance(content, str):
+        return content
+    if content is None:
+        return ""
+    return json.dumps(content, ensure_ascii=False)
+
+
+def tool_result_exit_code(result: Any) -> int | None:
+    if not isinstance(result, dict):
+        return None
+    exit_code = result.get("exitCode", result.get("exit_code"))
+    return exit_code if isinstance(exit_code, int) else None
+
+
+def normalize_tool_status(status: Any, is_error: Any) -> str:
+    if is_error is True:
+        return "error"
+    if isinstance(status, str):
+        value = status.strip().lower()
+        if value in {"done", "success", "succeeded", "completed", "ok"}:
+            return "completed"
+        if value in {"error", "failed", "failure", "errored"}:
+            return "error"
+        if value in {"cancelled", "canceled"}:
+            return "cancelled"
+    return "completed"
 
 
 def normalized_role(role: Any, content: Any) -> str:

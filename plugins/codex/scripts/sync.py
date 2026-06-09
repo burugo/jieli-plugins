@@ -635,6 +635,7 @@ def normalize_function_output(payload: dict[str, Any], line_number: int) -> dict
     else:
         content = redact_json(output)
     exit_code = exit_code_from_tool_output(content)
+    status = "error" if exit_code is not None and exit_code != 0 else "completed"
     return {
         "role": "tool",
         "message_id": call_id,
@@ -644,7 +645,7 @@ def normalize_function_output(payload: dict[str, Any], line_number: int) -> dict
                 "tool_use_id": call_id,
                 "content": content,
                 "run": {
-                    "status": "completed",
+                    "status": status,
                     "result": {
                         "output": content if isinstance(content, str) else json.dumps(content, ensure_ascii=False),
                         "exitCode": exit_code,

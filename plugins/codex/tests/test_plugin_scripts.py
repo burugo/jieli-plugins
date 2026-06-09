@@ -377,6 +377,50 @@ class CodexSyncScriptTests(unittest.TestCase):
         self.assertEqual(tool_result["run"]["result"]["exitCode"], 0)
         self.assertEqual(tool_result["run"]["result"]["output"], "Chunk ID: abc\nProcess exited with code 0\nOutput:\n## main\n")
 
+    def test_build_payload_marks_nonzero_tool_exit_as_error(self):
+        from sync import build_payload_from_hook
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            transcript = Path(tmpdir) / "session.jsonl"
+            transcript.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "type": "response_item",
+                                "payload": {
+                                    "type": "function_call",
+                                    "call_id": "call-fail",
+                                    "name": "shell_command",
+                                    "arguments": json.dumps({"cmd": "exit 1"}),
+                                },
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "type": "response_item",
+                                "payload": {
+                                    "type": "function_call_output",
+                                    "call_id": "call-fail",
+                                    "output": "Process exited with code 1\nOutput:\n",
+                                },
+                            }
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            payload = build_payload_from_hook(
+                {"session_id": "codex-fail", "transcript_path": str(transcript)},
+                base_url="https://jieli.example.test",
+            )
+
+        tool_result = payload["thread"]["messages"][1]["content"][0]
+        self.assertEqual(tool_result["run"]["status"], "error")
+        self.assertEqual(tool_result["run"]["result"]["exitCode"], 1)
+
     def test_build_payload_skips_codex_internal_context_messages(self):
         from sync import build_payload_from_hook
 

@@ -248,13 +248,64 @@ class SyncScriptTests(unittest.TestCase):
         self.assertEqual(len(payload["thread"]["messages"]), 3)
         self.assertEqual(payload["thread"]["messages"][1]["usage"], {"totalInputTokens": 25, "maxInputTokens": 100})
         self.assertEqual(payload["thread"]["messages"][2]["role"], "tool")
-        self.assertEqual(payload["thread"]["messages"][2]["content"][0]["type"], "tool_result")
-        self.assertIn("[REDACTED:authorization-bearer]", payload["thread"]["messages"][2]["content"][0]["content"])
+        tool_result = payload["thread"]["messages"][2]["content"][0]
+        self.assertEqual(tool_result["type"], "tool_result")
+        self.assertIn("[REDACTED:authorization-bearer]", tool_result["content"])
+        self.assertEqual(tool_result["run"]["status"], "completed")
+        self.assertEqual(tool_result["run"]["result"]["output"], "Authorization: Bearer [REDACTED:authorization-bearer]")
         raw_payload = json.dumps(payload, sort_keys=True)
         self.assertIn("[REDACTED:", raw_payload)
         self.assertNotIn("sk-ant-secret-value", raw_payload)
         self.assertNotIn("abc.def.ghi", raw_payload)
         self.assertNotIn("tool.secret", raw_payload)
+
+    def test_build_payload_normalizes_tool_result_error_status(self):
+        from sync import build_payload_from_hook
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            transcript = Path(tmpdir) / "session.jsonl"
+            transcript.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "type": "assistant",
+                                "uuid": "tool-use-1",
+                                "sessionId": "cc-tool-error",
+                                "message": {
+                                    "role": "assistant",
+                                    "content": [{"type": "tool_use", "id": "tool-1", "name": "Bash", "input": {"command": "npm test"}}],
+                                },
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "type": "user",
+                                "uuid": "tool-result-1",
+                                "sessionId": "cc-tool-error",
+                                "message": {
+                                    "role": "user",
+                                    "content": [{"type": "tool_result", "tool_use_id": "tool-1", "content": "failed", "is_error": True}],
+                                },
+                            }
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            payload = build_payload_from_hook(
+                {"session_id": "cc-tool-error", "transcript_path": str(transcript)},
+                base_url="https://jieli.example.test",
+            )
+
+        tool_result = payload["thread"]["messages"][1]["content"][0]
+        self.assertEqual(tool_result["tool_use_id"], "tool-1")
+        self.assertEqual(tool_result["content"], "failed")
+        self.assertEqual(tool_result["run"]["status"], "error")
+        self.assertEqual(tool_result["run"]["result"]["output"], "failed")
+        self.assertNotIn("is_error", tool_result)
 
     def test_build_payload_includes_raw_repo_url_from_git_remote(self):
         from sync import build_payload_from_hook
