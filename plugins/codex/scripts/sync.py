@@ -34,6 +34,7 @@ SESSION_MAPPING_FILE = "codex-sessions.json"
 ATTACHMENT_CACHE_FILE = "codex-attachments.json"
 IMAGE_PLACEHOLDER_RE = re.compile(r"\[Image:\s*source:\s*([^\]]+)\]")
 IMAGE_LABEL_RE = re.compile(r"\[Image\s+#\d+\]")
+LOCAL_MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\((/[^)\n]+)\)")
 SUPPORTED_IMAGE_MEDIA_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 COMPACTION_PLACEHOLDER = (
     "[Context compacted - earlier conversation summarized to continue past the context window]"
@@ -424,7 +425,7 @@ def normalize_text_blocks(text: str, image_uploader: ImageUploader | None = None
 
 
 def append_text_block(blocks: list[dict[str, Any]], text: str) -> None:
-    value = redact_text(text).strip()
+    value = redact_text(strip_local_markdown_link_targets(text)).strip()
     if value:
         blocks.append({"type": "text", "text": value})
 
@@ -550,10 +551,22 @@ def should_skip_user_message(content: Any) -> bool:
         return True
     skipped_prefixes = (
         "<codex_internal_context",
+        "<skill>",
         "Base directory for this skill:",
         "# AGENTS.md instructions for ",
     )
     return any(text.startswith(prefix) for prefix in skipped_prefixes)
+
+
+def strip_local_markdown_link_targets(text: str) -> str:
+    def replace(match: re.Match[str]) -> str:
+        label = match.group(1).strip()
+        target = match.group(2).strip()
+        if target.startswith("/Users/") or target.startswith("/var/") or target.startswith("/private/") or target.startswith("/tmp/"):
+            return label
+        return match.group(0)
+
+    return LOCAL_MARKDOWN_LINK_RE.sub(replace, text)
 
 
 def normalize_function_call(payload: dict[str, Any], line_number: int) -> dict[str, Any] | None:

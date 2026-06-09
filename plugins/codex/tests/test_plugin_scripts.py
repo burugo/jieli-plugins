@@ -265,6 +265,95 @@ Default State: ANSWER
         self.assertEqual(payload["thread"]["title"], "actual request")
         self.assertNotIn("AI AGENT PROTOCOLS", raw_payload)
 
+    def test_build_payload_skips_loaded_skill_content_block(self):
+        from sync import build_payload_from_hook
+
+        skill_block = """<skill>
+<name>claude-code-setup:spec-driven-planning</name>
+<path>/Users/alice/Library/Mobile Documents/com~apple~CloudDocs/dotfiles/config/claude/skills/spec-driven-planning/SKILL.md</path>
+---
+name: spec-driven-planning
+description: Use this skill whenever the user asks for a spec.
+---
+
+# Spec-Driven Planning
+Do not upload this loaded skill body.
+</skill>"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            transcript = Path(tmpdir) / "session.jsonl"
+            transcript.write_text(
+                "\n".join(
+                    [
+                        json.dumps({"type": "session_meta", "payload": {"id": "codex-skill", "cwd": "/Users/alice/work/jieli"}}),
+                        json.dumps(
+                            {
+                                "type": "response_item",
+                                "payload": {
+                                    "type": "message",
+                                    "role": "user",
+                                    "content": [{"type": "input_text", "text": skill_block}],
+                                },
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "type": "response_item",
+                                "payload": {
+                                    "type": "message",
+                                    "role": "user",
+                                    "content": [{"type": "input_text", "text": "actual request"}],
+                                },
+                            }
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            payload = build_payload_from_hook(
+                {"session_id": "codex-skill", "transcript_path": str(transcript)},
+                base_url="https://jieli.example.test",
+            )
+
+        raw_payload = json.dumps(payload, ensure_ascii=False)
+        self.assertEqual(len(payload["thread"]["messages"]), 1)
+        self.assertEqual(payload["thread"]["messages"][0]["content"], "actual request")
+        self.assertNotIn("Spec-Driven Planning", raw_payload)
+        self.assertNotIn("SKILL.md", raw_payload)
+
+    def test_build_payload_strips_local_markdown_link_targets(self):
+        from sync import build_payload_from_hook
+
+        message = "use [$claude-code-setup:spec-driven-planning](/Users/alice/Library/Mobile Documents/com~apple~CloudDocs/dotfiles/config/claude/skills/spec-driven-planning/SKILL.md)"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            transcript = Path(tmpdir) / "session.jsonl"
+            transcript.write_text(
+                json.dumps({"type": "session_meta", "payload": {"id": "codex-link", "cwd": "/Users/alice/work/jieli"}})
+                + "\n"
+                + json.dumps(
+                    {
+                        "type": "response_item",
+                        "payload": {
+                            "type": "message",
+                            "role": "user",
+                            "content": [{"type": "input_text", "text": message}],
+                        },
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            payload = build_payload_from_hook(
+                {"session_id": "codex-link", "transcript_path": str(transcript)},
+                base_url="https://jieli.example.test",
+            )
+
+        content = payload["thread"]["messages"][0]["content"]
+        self.assertEqual(content, "use $claude-code-setup:spec-driven-planning")
+        self.assertNotIn("/Users/alice", json.dumps(payload, ensure_ascii=False))
+
     def test_build_payload_includes_raw_repo_url_from_git_remote(self):
         from sync import build_payload_from_hook
 
