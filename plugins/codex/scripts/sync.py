@@ -109,7 +109,7 @@ def build_payload_from_hook(
         "repo_url": repo_url_from_cwd(cwd),
         "branch": transcript.get("branch") or git_branch(cwd),
         "source_url": f"{base}/threads/{provider_thread_id}",
-        "labels": ["codex"],
+        "labels": [],
         "thread": thread_payload,
     }
 
@@ -551,6 +551,7 @@ def should_skip_user_message(content: Any) -> bool:
     skipped_prefixes = (
         "<codex_internal_context",
         "Base directory for this skill:",
+        "# AGENTS.md instructions for ",
     )
     return any(text.startswith(prefix) for prefix in skipped_prefixes)
 

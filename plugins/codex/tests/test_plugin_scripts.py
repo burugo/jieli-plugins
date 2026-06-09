@@ -137,7 +137,7 @@ class CodexSyncScriptTests(unittest.TestCase):
             )
 
         self.assertEqual(payload["provider"], "codex")
-        self.assertEqual(payload["labels"], ["codex"])
+        self.assertEqual(payload["labels"], [])
         self.assertEqual(payload["repo"], "work/jieli")
         self.assertEqual(payload["branch"], "plugin/codex")
         self.assertEqual(payload["source_url"], "https://jieli.example.test/threads/T-codex-1")
@@ -205,6 +205,65 @@ class CodexSyncScriptTests(unittest.TestCase):
         self.assertEqual(len(payload["thread"]["messages"]), 1)
         self.assertEqual(payload["thread"]["messages"][0]["content"], "real request")
         self.assertEqual(payload["thread"]["title"], "real request")
+
+    def test_build_payload_skips_loaded_agents_instructions_block(self):
+        from sync import build_payload_from_hook
+
+        agents_block = """# AGENTS.md instructions for /Users/alice/work/jieli <INSTRUCTIONS> #
+
+<INSTRUCTIONS>
+# AI AGENT PROTOCOLS v2.0
+
+## 1. Operating Modes
+Default State: ANSWER
+</INSTRUCTIONS>"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            transcript = Path(tmpdir) / "session.jsonl"
+            transcript.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "type": "session_meta",
+                                "payload": {"id": "codex-agents", "cwd": "/Users/alice/work/jieli"},
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "type": "response_item",
+                                "payload": {
+                                    "type": "message",
+                                    "role": "user",
+                                    "content": [{"type": "input_text", "text": agents_block}],
+                                },
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "type": "response_item",
+                                "payload": {
+                                    "type": "message",
+                                    "role": "user",
+                                    "content": [{"type": "input_text", "text": "actual request"}],
+                                },
+                            }
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            payload = build_payload_from_hook(
+                {"session_id": "codex-agents", "transcript_path": str(transcript)},
+                base_url="https://jieli.example.test",
+            )
+
+        raw_payload = json.dumps(payload, ensure_ascii=False)
+        self.assertEqual(len(payload["thread"]["messages"]), 1)
+        self.assertEqual(payload["thread"]["messages"][0]["content"], "actual request")
+        self.assertEqual(payload["thread"]["title"], "actual request")
+        self.assertNotIn("AI AGENT PROTOCOLS", raw_payload)
 
     def test_build_payload_includes_raw_repo_url_from_git_remote(self):
         from sync import build_payload_from_hook
