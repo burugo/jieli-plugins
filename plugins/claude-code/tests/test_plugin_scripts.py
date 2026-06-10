@@ -1667,7 +1667,7 @@ class CommitTrailerTests(PluginScriptTestCase):
             )
 
         updated = response["hookSpecificOutput"]["updatedInput"]["command"]
-        self.assertIn('--trailer "Claude-Code-Thread-ID: https://jieli.example.test/threads/T-cc-1"', updated)
+        self.assertIn('--trailer "Jieli-Thread: https://jieli.example.test/threads/T-cc-1"', updated)
 
     def test_pre_tool_use_updates_git_commit_inside_top_level_and_chain(self):
         from commit_trailer import build_hook_response
@@ -1710,7 +1710,7 @@ class CommitTrailerTests(PluginScriptTestCase):
                 "go test ./cmd/server ./backend/service/thread ./backend/api/route && "
                 "git add backend/api/route/export.go backend/service/thread/export.go cmd/server/main.go cmd/server/main_test.go && "
                 'git commit -m "fix: support api thread markdown export" '
-                '--trailer "Claude-Code-Thread-ID: https://jieli.example.test/threads/T-cc-chain" -- docs/test.md'
+                '--trailer "Jieli-Thread: https://jieli.example.test/threads/T-cc-chain" -- docs/test.md'
             ),
         )
 
@@ -1742,7 +1742,7 @@ class CommitTrailerTests(PluginScriptTestCase):
             )
 
         updated = response["hookSpecificOutput"]["updatedInput"]["command"]
-        self.assertIn('--trailer "Claude-Code-Thread-ID: https://jieli.example.test/threads/T-cc-legacy"', updated)
+        self.assertIn('--trailer "Jieli-Thread: https://jieli.example.test/threads/T-cc-legacy"', updated)
 
     def test_pre_tool_use_leaves_ambiguous_commands_unchanged(self):
         from commit_trailer import build_hook_response

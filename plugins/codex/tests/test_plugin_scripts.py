@@ -1126,7 +1126,7 @@ class CodexCommitTrailerTests(PluginScriptTestCase):
 
         self.assertEqual(
             updated,
-            'git commit -m "ship" --trailer "Codex-Thread-ID: https://jieli.example.test/threads/T-codex-1"',
+            'git commit -m "ship" --trailer "Jieli-Thread: https://jieli.example.test/threads/T-codex-1"',
         )
 
     def test_updated_commit_command_updates_git_commit_inside_top_level_and_chain(self):
@@ -1156,7 +1156,7 @@ class CodexCommitTrailerTests(PluginScriptTestCase):
                 "python3 -m unittest plugins/codex/tests/test_plugin_scripts.py && "
                 "git add plugins/codex/scripts/commit_trailer.py plugins/codex/tests/test_plugin_scripts.py && "
                 'git commit -m "fix: add codex thread trailers" '
-                '--trailer "Codex-Thread-ID: https://jieli.example.test/threads/T-codex-chain" -- plugins/codex/scripts/commit_trailer.py'
+                '--trailer "Jieli-Thread: https://jieli.example.test/threads/T-codex-chain" -- plugins/codex/scripts/commit_trailer.py'
             ),
         )
 
@@ -1176,7 +1176,7 @@ class CodexCommitTrailerTests(PluginScriptTestCase):
 
         self.assertEqual(
             updated,
-            'git commit -m "ship" --trailer "Codex-Thread-ID: https://jieli.example.test/threads/T-codex-1" -- path.txt',
+            'git commit -m "ship" --trailer "Jieli-Thread: https://jieli.example.test/threads/T-codex-1" -- path.txt',
         )
 
     def test_updated_commit_command_does_not_rewrite_complex_shell_or_existing_trailer(self):
@@ -1192,7 +1192,7 @@ class CodexCommitTrailerTests(PluginScriptTestCase):
             )
 
             self.assertEqual(updated_commit_command('git commit -m "ship" | cat', "codex-1", home), "")
-            self.assertEqual(updated_commit_command('git commit -m "ship" --trailer Codex-Thread-ID:old', "codex-1", home), "")
+            self.assertEqual(updated_commit_command('git commit -m "ship" --trailer Jieli-Thread:old', "codex-1", home), "")
 
     def test_build_hook_response_returns_updated_input_shape(self):
         from commit_trailer import build_hook_response
@@ -1219,7 +1219,7 @@ class CodexCommitTrailerTests(PluginScriptTestCase):
         self.assertEqual(output["hookEventName"], "PreToolUse")
         self.assertEqual(output["permissionDecision"], "allow")
         self.assertIn("updatedInput", output)
-        self.assertIn("Codex-Thread-ID: https://jieli.example.test/threads/T-codex-1", output["updatedInput"]["command"])
+        self.assertIn("Jieli-Thread: https://jieli.example.test/threads/T-codex-1", output["updatedInput"]["command"])
 
 
 class CodexReadThreadTests(PluginScriptTestCase):

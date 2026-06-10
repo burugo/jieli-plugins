@@ -14,7 +14,7 @@ from typing import Any
 import sync
 
 
-TRAILER_KEY = "Codex-Thread-ID"
+TRAILER_KEY = "Jieli-Thread"
 AMBIGUOUS_TOKENS = ["||", ";", "\n", "$(", "`", "<<", "|"]
 
 

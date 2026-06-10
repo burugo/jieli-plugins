@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 
-TRAILER_KEY = "Claude-Code-Thread-ID"
+TRAILER_KEY = "Jieli-Thread"
 AMBIGUOUS_TOKENS = ["||", ";", "\n", "$(", "`", "<<", "|"]
 
 
