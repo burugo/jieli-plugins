@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import shlex
 import sys
@@ -15,6 +16,15 @@ import sync
 
 
 TRAILER_KEY = "Jieli-Thread"
+HANDOFF_CONTEXT_ENV = "JIELI_HANDOFF_CONTEXT_B64"
+HANDOFF_HELPER_COMMAND = "jieli-handoff-info"
+HANDOFF_HELPER_SCRIPT_COMMANDS = {
+    "${CLAUDE_PLUGIN_ROOT}/scripts/handoff_info.py",
+    "$CLAUDE_PLUGIN_ROOT/scripts/handoff_info.py",
+    "${PLUGIN_ROOT}/scripts/handoff_info.py",
+    "$PLUGIN_ROOT/scripts/handoff_info.py",
+    "${PLUGIN_ROOT:-$CLAUDE_PLUGIN_ROOT}/scripts/handoff_info.py",
+}
 AMBIGUOUS_TOKENS = ["||", ";", "\n", "$(", "`", "<<", "|"]
 
 
@@ -26,8 +36,10 @@ def build_hook_response(hook_data: dict[str, Any], home: Path | None = None) -> 
         return {}
     home = home or Path.home()
     session_id = str(hook_data.get("session_id") or "")
-    ensure_session_mapping(hook_data, home)
-    updated = updated_commit_command(command, session_id, home)
+    updated = updated_handoff_command(command, hook_data)
+    if not updated:
+        ensure_session_mapping(hook_data, home)
+        updated = updated_commit_command(command, session_id, home)
     if not updated:
         return {}
     return {
@@ -37,6 +49,32 @@ def build_hook_response(hook_data: dict[str, Any], home: Path | None = None) -> 
             "updatedInput": {"command": updated},
         }
     }
+
+
+def updated_handoff_command(command: str, hook_data: dict[str, Any]) -> str:
+    if not is_plain_handoff_helper_command(command):
+        return ""
+    context = {
+        "session_id": str(hook_data.get("session_id") or ""),
+        "transcript_path": str(hook_data.get("transcript_path") or hook_data.get("session_path") or ""),
+        "cwd": str(hook_data.get("cwd") or ""),
+    }
+    encoded = base64.b64encode(json.dumps(context).encode("utf-8")).decode("ascii")
+    return f"{HANDOFF_CONTEXT_ENV}={shlex.quote(encoded)} {command}"
+
+
+def is_plain_handoff_helper_command(command: str) -> bool:
+    if HANDOFF_CONTEXT_ENV in command:
+        return False
+    if any(token in command for token in AMBIGUOUS_TOKENS):
+        return False
+    try:
+        parts = shlex.split(command)
+    except ValueError:
+        return False
+    if len(parts) == 1 and parts[0] == HANDOFF_HELPER_COMMAND:
+        return True
+    return len(parts) == 2 and parts[0] == "python3" and parts[1] in HANDOFF_HELPER_SCRIPT_COMMANDS
 
 
 def ensure_session_mapping(hook_data: dict[str, Any], home: Path) -> None:
