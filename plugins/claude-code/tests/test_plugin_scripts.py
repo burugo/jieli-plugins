@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_SCRIPTS = str(PLUGIN_ROOT / "scripts")
-SCRIPT_MODULES = ("sync", "commit_trailer", "read_thread", "redact", "handoff_info")
+SCRIPT_MODULES = ("sync", "commit_trailer", "read_thread", "find_threads", "redact", "handoff_info")
 
 
 def use_plugin_scripts() -> None:
@@ -1639,6 +1639,102 @@ class ReadThreadScriptTests(PluginScriptTestCase):
         self.assertEqual(captured["url"], "https://jieli.app/threads/T-abc123.md?truncate_tool_results=1")
 
 
+class FindThreadsScriptTests(PluginScriptTestCase):
+    def test_find_threads_searches_all_providers_by_default(self):
+        from urllib.parse import parse_qs, urlparse
+
+        from find_threads import fetch_threads
+
+        captured = {}
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return None
+
+            def read(self):
+                return b'{"data":{"threads":[]}}'
+
+        def fake_urlopen(request, timeout):
+            captured["url"] = request.full_url
+            captured["auth"] = request.headers.get("Authorization")
+            captured["timeout"] = timeout
+            return FakeResponse()
+
+        with patch("urllib.request.urlopen", fake_urlopen):
+            result = fetch_threads("payment bug", "https://jieli.example.test/", "secret")
+
+        query = parse_qs(urlparse(captured["url"]).query)
+        self.assertEqual(result, {"data": {"threads": []}})
+        self.assertEqual(captured["url"].split("?", 1)[0], "https://jieli.example.test/plugin/threads")
+        self.assertEqual(captured["auth"], "Bearer secret")
+        self.assertEqual(captured["timeout"], 20)
+        self.assertEqual(query["search"], ["payment bug"])
+        self.assertEqual(query["page_size"], ["10"])
+        self.assertEqual(query["sort"], ["updated"])
+        self.assertNotIn("provider", query)
+
+    def test_find_threads_includes_provider_only_when_explicit(self):
+        from urllib.parse import parse_qs, urlparse
+
+        from find_threads import fetch_threads
+
+        captured = {}
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return None
+
+            def read(self):
+                return b'{"data":{"threads":[]}}'
+
+        def fake_urlopen(request, timeout):
+            captured["url"] = request.full_url
+            return FakeResponse()
+
+        with patch("urllib.request.urlopen", fake_urlopen):
+            fetch_threads("payment bug", "https://jieli.example.test", "secret", provider="codex")
+
+        query = parse_qs(urlparse(captured["url"]).query)
+        self.assertEqual(query["provider"], ["codex"])
+
+    def test_find_threads_outputs_compact_markdown_results(self):
+        from find_threads import format_threads_markdown
+
+        output = format_threads_markdown(
+            {
+                "data": {
+                    "threads": [
+                        {
+                            "provider_thread_id": "T-1",
+                            "title": "Fix checkout",
+                            "provider": "codex",
+                            "repo": "shop/app",
+                            "branch": "bugfix",
+                            "updated_at": "2026-06-13T10:00:00Z",
+                            "message_count": 7,
+                            "preview": "checkout failed on coupon path",
+                        }
+                    ]
+                }
+            },
+            "https://jieli.example.test",
+        )
+
+        self.assertIn("1. Fix checkout", output)
+        self.assertIn("provider: codex", output)
+        self.assertIn("thread_id: T-1", output)
+        self.assertIn("repo: shop/app@bugfix", output)
+        self.assertIn("messages: 7", output)
+        self.assertIn("preview: checkout failed on coupon path", output)
+        self.assertIn("read_url: https://jieli.example.test/threads/T-1", output)
+
+
 class HandoffInfoTests(PluginScriptTestCase):
     def test_main_outputs_high_confidence_info_from_hook_context(self):
         from handoff_info import main
@@ -1860,6 +1956,62 @@ class PluginManifestTests(PluginScriptTestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Read a Jieli thread export.", result.stdout)
+
+    def test_bin_find_threads_wrapper_resolves_plugin_root_without_env(self):
+        wrapper = PLUGIN_ROOT / "bin" / "jieli-find-threads"
+
+        result = subprocess.run(
+            [str(wrapper), "--help"],
+            env={},
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=5,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Find Jieli threads.", result.stdout)
+
+    def test_jieli_skills_are_split_by_known_thread_id_vs_search(self):
+        self.assertTrue((PLUGIN_ROOT / "skills" / "jieli-read" / "SKILL.md").exists())
+        self.assertTrue((PLUGIN_ROOT / "skills" / "jieli-find" / "SKILL.md").exists())
+        self.assertFalse((PLUGIN_ROOT / "skills" / "jieli" / "SKILL.md").exists())
+
+        read_skill = (PLUGIN_ROOT / "skills" / "jieli-read" / "SKILL.md").read_text(encoding="utf-8")
+        find_skill = (PLUGIN_ROOT / "skills" / "jieli-find" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("name: jieli-read", read_skill)
+        self.assertIn("jieli-read-thread", read_skill)
+        self.assertIn("name: jieli-find", find_skill)
+        self.assertIn("jieli-find-threads", find_skill)
+        self.assertIn("Do not pass --provider", find_skill)
+
+    def test_handoff_points_to_jieli_read_skill_for_full_transcript(self):
+        handoff_skill = (PLUGIN_ROOT / "skills" / "handoff" / "SKILL.md").read_text(encoding="utf-8")
+
+        self.assertIn("`jieli-read` skill", handoff_skill)
+        self.assertIn("use the jieli-read skill to read the thread", handoff_skill)
+        self.assertNotIn("use the `jieli` skill", handoff_skill)
+
+    def test_handoff_saves_prompt_under_tmp(self):
+        handoff_skill = (PLUGIN_ROOT / "skills" / "handoff" / "SKILL.md").read_text(encoding="utf-8")
+
+        self.assertIn('OUT="/tmp/handoff-$THREAD_ID.md"', handoff_skill)
+        self.assertIn('OUT="/tmp/handoff-$SLUG.md"', handoff_skill)
+        self.assertNotIn('${TMPDIR:-/tmp}', handoff_skill)
+
+    def test_public_docs_describe_split_jieli_skills_without_self_hosted_examples(self):
+        docs = "\n".join(
+            [
+                (PLUGIN_ROOT.parents[1] / "README.md").read_text(encoding="utf-8"),
+                (PLUGIN_ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"),
+            ]
+        )
+
+        self.assertIn("`jieli-read`", docs)
+        self.assertIn("`jieli-find`", docs)
+        self.assertNotIn("https://your-jieli.example.com", docs)
+        self.assertNotIn("self-hosted", docs)
+        self.assertNotIn("Provides the `jieli` skill", docs)
 
     def test_standard_hooks_file_is_not_duplicated_in_manifest(self):
         manifest = json.loads((PLUGIN_ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))

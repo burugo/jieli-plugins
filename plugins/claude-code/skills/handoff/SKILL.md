@@ -5,7 +5,7 @@ description: "Create a paste-ready handoff/compress prompt for continuing the cu
 
 # Handoff
 
-Compress the current session into a self-contained handoff prompt that a fresh agent can start from. When the current Jieli thread can be identified, embed its thread id and URL so the next agent can use the `jieli` skill to read the full transcript if the summary is not enough.
+Compress the current session into a self-contained handoff prompt that a fresh agent can start from. When the current Jieli thread can be identified, embed its thread id and URL so the next agent can use the `jieli-read` skill to read the full transcript if the summary is not enough.
 
 ## When to Use
 
@@ -15,7 +15,7 @@ Use this skill when:
 - The user asks to compress, compact, or summarize the context to keep working past the context window.
 - The user wants a prompt they can paste into a fresh Claude Code (or other) session to continue this work.
 
-Do not use this skill for ordinary status updates or to read/search other threads. Reading/searching threads is the `jieli` skill.
+Do not use this skill for ordinary status updates or to read/search other threads. Reading known thread ids/URLs is the `jieli-read` skill; searching by clues is the `jieli-find` skill.
 
 ## Inputs
 
@@ -94,7 +94,7 @@ If the thread was resolved with high confidence, assemble the handoff prompt in 
 
 ```text
 Continuing work from Jieli thread <THREAD_ID>.
-When you lack specific information, use the jieli skill to read the thread.
+When you lack specific information, use the jieli-read skill to read the thread.
 
 Relevant files: <path1> <path2> <path3> ...
 
@@ -112,8 +112,8 @@ Current Jieli thread could not be identified automatically; ask the user for the
 
 Write the full handoff prompt to a temp file, but do not print the full prompt in your reply:
 
-- With a thread id: `OUT="${TMPDIR:-/tmp}/handoff-$THREAD_ID.md"`
-- Without a thread id: derive a short slug from the user goal if present, otherwise from the handoff summary title, and use `OUT="${TMPDIR:-/tmp}/handoff-$SLUG.md"`.
+- With a thread id: `OUT="/tmp/handoff-$THREAD_ID.md"`
+- Without a thread id: derive a short slug from the user goal if present, otherwise from the handoff summary title, and use `OUT="/tmp/handoff-$SLUG.md"`.
 
 Use a safe writer, for example Python, so prompt content cannot break a shell here-doc:
 
@@ -133,7 +133,7 @@ Then reply with only a brief summary: the saved file path, whether a thread id w
 
 - The full ready-to-paste handoff prompt saved to `$OUT`.
 - A brief reply summary with the saved path and key metadata, not the full handoff content.
-- If a high-confidence thread id is available, the next agent can use the `jieli` skill to read `<THREAD_ID>` for the full transcript.
+- If a high-confidence thread id is available, the next agent can use the `jieli-read` skill to read `<THREAD_ID>` for the full transcript.
 
 ## Notes & Safety
 
