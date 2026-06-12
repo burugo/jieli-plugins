@@ -1,7 +1,7 @@
 {
   "name": "claude-code",
   "displayName": "Jieli Claude Code Sync",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "Sync Claude Code sessions to Jieli threads and attach Jieli thread trailers to Claude-created commits.",
   "author": {
     "name": "Jieli"
@@ -12,14 +12,14 @@
     "api_key": {
       "type": "string",
       "title": "Jieli API key",
-      "description": "API key used to upload and read your Jieli threads.",
+      "description": "API key used to upload, read, and search your Jieli threads.",
       "sensitive": true,
       "required": true
     },
     "base_url": {
       "type": "string",
       "title": "Jieli base URL",
-      "description": "Base URL for your Jieli instance. Defaults to https://jieli.app; set this only for self-hosted instances.",
+      "description": "Base URL for Jieli. Defaults to https://jieli.app.",
       "default": "https://jieli.app",
       "required": false
     }

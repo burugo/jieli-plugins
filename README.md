@@ -36,12 +36,6 @@ You can also set it through your shell environment before starting Claude Code:
 export JIELI_API_KEY="your-jieli-api-key"
 ```
 
-For self-hosted Jieli, also set:
-
-```bash
-export JIELI_BASE_URL="https://your-jieli.example.com"
-```
-
 ## Codex Install
 
 Add the marketplace in Codex:
@@ -73,11 +67,10 @@ path.chmod(0o600)
 PY
 ```
 
-For self-hosted Jieli, set `base_url` to your deployment URL. You can also use environment variables before starting Codex:
+You can also use environment variables before starting Codex:
 
 ```bash
 export JIELI_API_KEY="your-jieli-api-key"
-export JIELI_BASE_URL="https://your-jieli.example.com"
 ```
 
 ## What It Does
@@ -87,8 +80,8 @@ export JIELI_BASE_URL="https://your-jieli.example.com"
 - Uploads pasted local images as Jieli attachments.
 - Adds `Claude-Code-Thread-ID` trailers to Claude-created git commits.
 - Adds best-effort `Jieli-Thread` trailers to simple Codex-created `git commit` commands.
-- Provides the `jieli` skill for reading Jieli thread links from Claude Code.
-- Provides the `jieli` skill for reading Jieli thread links from Codex.
+- Provides the `jieli-read` skill for reading known Jieli thread links or ids.
+- Provides the `jieli-find` skill for searching synced Jieli threads by keywords, repo, file, topic, or clues.
 - Redacts common secrets before upload.
 
 ## Development

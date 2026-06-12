@@ -1,6 +1,6 @@
 # Jieli Codex Sync
 
-Sync local Codex sessions to Jieli threads, redact common secrets before upload, provide a `jieli` skill for reading synced threads, and add best-effort `Jieli-Thread` trailers to Codex-created git commits.
+Sync local Codex sessions to Jieli threads, redact common secrets before upload, provide `jieli-read` and `jieli-find` skills for reading/searching synced threads, and add best-effort `Jieli-Thread` trailers to Codex-created git commits.
 
 ## Configuration
 
@@ -19,13 +19,12 @@ path.chmod(0o600)
 PY
 ```
 
-Hosted Jieli defaults to `https://jieli.app`. For self-hosted Jieli, set `base_url` to your deployment URL.
+Jieli defaults to `https://jieli.app`.
 
 You can also use environment variables before starting Codex; environment variables override `settings.json`:
 
 ```bash
 export JIELI_API_KEY="your-jieli-api-key"
-export JIELI_BASE_URL="https://your-jieli.example.com"
 ```
 
 ## Hooks
