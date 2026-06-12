@@ -18,6 +18,7 @@ import sync
 TRAILER_KEY = "Jieli-Thread"
 HANDOFF_CONTEXT_ENV = "JIELI_HANDOFF_CONTEXT_B64"
 HANDOFF_HELPER_COMMAND = "jieli-handoff-info"
+SHELL_TOOL_NAMES = {"Bash", "Shell", "shell_command"}
 HANDOFF_HELPER_SCRIPT_COMMANDS = {
     "${CLAUDE_PLUGIN_ROOT}/scripts/handoff_info.py",
     "$CLAUDE_PLUGIN_ROOT/scripts/handoff_info.py",
@@ -29,7 +30,7 @@ AMBIGUOUS_TOKENS = ["||", ";", "\n", "$(", "`", "<<", "|"]
 
 
 def build_hook_response(hook_data: dict[str, Any], home: Path | None = None) -> dict[str, Any]:
-    if hook_data.get("tool_name") != "Bash":
+    if hook_data.get("tool_name") not in SHELL_TOOL_NAMES:
         return {}
     command = (hook_data.get("tool_input") or {}).get("command", "")
     if not isinstance(command, str) or not command:

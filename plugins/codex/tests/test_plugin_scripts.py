@@ -1180,6 +1180,24 @@ class CodexHandoffInfoTests(PluginScriptTestCase):
 
 
 class CodexCommitTrailerTests(PluginScriptTestCase):
+    def test_pre_tool_use_accepts_codex_shell_tool_aliases(self):
+        from commit_trailer import build_hook_response
+
+        for tool_name in ("Bash", "Shell", "shell_command"):
+            with self.subTest(tool_name=tool_name):
+                response = build_hook_response(
+                    {
+                        "session_id": "codex-handoff",
+                        "transcript_path": "/tmp/codex-session.jsonl",
+                        "cwd": "/repo",
+                        "tool_name": tool_name,
+                        "tool_input": {"command": "jieli-handoff-info"},
+                    }
+                )
+
+                updated = response["hookSpecificOutput"]["updatedInput"]["command"]
+                self.assertIn("JIELI_HANDOFF_CONTEXT_B64=", updated)
+
     def test_pre_tool_use_injects_handoff_context_for_helper_command(self):
         from commit_trailer import build_hook_response
 
@@ -1566,6 +1584,12 @@ class CodexPluginManifestTests(PluginScriptTestCase):
         hooks = json.loads((PLUGIN_ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8"))
 
         self.assertNotIn("UserPromptSubmit", hooks["hooks"])
+
+    def test_pre_tool_use_matches_codex_shell_tool_names(self):
+        hooks = json.loads((PLUGIN_ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+
+        matcher = hooks["hooks"]["PreToolUse"][0]["matcher"]
+        self.assertEqual(matcher, "^(Bash|Shell|shell_command)$")
 
 
 if __name__ == "__main__":

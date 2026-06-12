@@ -37,7 +37,7 @@ The plugin syncs on:
 - `PreCompact`
 - `Stop`
 
-The `PreToolUse(Bash)` hook attempts to rewrite simple `git commit` commands by appending:
+The shell `PreToolUse` hook attempts to rewrite simple `git commit` commands by appending:
 
 ```text
 --trailer "Jieli-Thread: https://jieli.app/threads/T-..."
