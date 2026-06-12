@@ -35,7 +35,6 @@ The plugin syncs on:
 
 - `SessionStart`
 - `PreCompact`
-- `PostCompact`
 - `Stop`
 
 The `PreToolUse(Bash)` hook attempts to rewrite simple `git commit` commands by appending:

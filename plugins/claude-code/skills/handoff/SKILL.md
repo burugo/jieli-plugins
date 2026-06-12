@@ -137,6 +137,6 @@ Then reply with only a brief summary: the saved file path, whether a thread id w
 
 ## Notes & Safety
 
-- The current turn is uploaded to Jieli by the Stop/SessionEnd hooks after this turn ends, so `read_thread` may cover history only up to the previous sync. The handoff prompt itself must carry the key current context.
+- The current turn is uploaded to Jieli by the Stop hook after this turn ends, so `read_thread` may cover history only up to the previous sync. The handoff prompt itself must carry the key current context.
 - A wrong thread is worse than no thread. If the helper cannot identify the current thread with high confidence, do not guess.
 - Never include API keys, secrets, tokens, cookies, `.env` contents, full transcripts, large raw logs, or sensitive private data in the handoff prompt.

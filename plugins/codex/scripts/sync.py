@@ -26,8 +26,8 @@ from redact import redact_json, redact_text
 PROVIDER = "codex"
 DEFAULT_BASE_URL = jieli_config.DEFAULT_BASE_URL
 LOCK_TTL_SECONDS = 60
-TRANSCRIPT_FLUSH_TRIGGERS = {"stop", "precompact", "postcompact"}
-MISSING_CONFIG_NOTICE_TRIGGERS = {"stop", "precompact", "postcompact"}
+TRANSCRIPT_FLUSH_TRIGGERS = {"stop", "precompact"}
+MISSING_CONFIG_NOTICE_TRIGGERS = {"stop", "precompact"}
 TRANSCRIPT_QUIET_SECONDS = 0.25
 TRANSCRIPT_FLUSH_TIMEOUT_SECONDS = 1.5
 TOOL_OUTPUT_MAX_CHARS = 20000

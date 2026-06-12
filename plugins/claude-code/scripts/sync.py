@@ -24,8 +24,8 @@ from redact import redact_json, redact_text
 PROVIDER = "claude_code"
 DEFAULT_BASE_URL = "https://jieli.app"
 LOCK_TTL_SECONDS = 60
-TRANSCRIPT_FLUSH_TRIGGERS = {"stop", "sessionend", "precompact"}
-MISSING_CONFIG_NOTICE_TRIGGERS = {"stop", "sessionend", "precompact"}
+TRANSCRIPT_FLUSH_TRIGGERS = {"stop", "precompact"}
+MISSING_CONFIG_NOTICE_TRIGGERS = {"stop", "precompact"}
 TRANSCRIPT_QUIET_SECONDS = 0.25
 TRANSCRIPT_FLUSH_TIMEOUT_SECONDS = 1.5
 ATTACHMENT_CACHE_FILE = "claude-attachments.json"

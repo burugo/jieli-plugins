@@ -24,18 +24,6 @@
         ]
       }
     ],
-    "PostCompact": [
-      {
-        "matcher": "manual|auto",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"${PLUGIN_ROOT}/scripts/sync.py\" --trigger postcompact --jieli-hook",
-            "statusMessage": "Syncing Codex session to Jieli"
-          }
-        ]
-      }
-    ],
     "Stop": [
       {
         "hooks": [
