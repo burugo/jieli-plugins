@@ -52,7 +52,8 @@ def build_hook_response(hook_data: dict[str, Any], home: Path | None = None) -> 
 
 
 def updated_handoff_command(command: str, hook_data: dict[str, Any]) -> str:
-    if not is_plain_handoff_helper_command(command):
+    helper_command = resolved_handoff_helper_command(command)
+    if not helper_command:
         return ""
     context = {
         "session_id": str(hook_data.get("session_id") or ""),
@@ -60,21 +61,24 @@ def updated_handoff_command(command: str, hook_data: dict[str, Any]) -> str:
         "cwd": str(hook_data.get("cwd") or ""),
     }
     encoded = base64.b64encode(json.dumps(context).encode("utf-8")).decode("ascii")
-    return f"{HANDOFF_CONTEXT_ENV}={shlex.quote(encoded)} {command}"
+    return f"{HANDOFF_CONTEXT_ENV}={shlex.quote(encoded)} {helper_command}"
 
 
-def is_plain_handoff_helper_command(command: str) -> bool:
+def resolved_handoff_helper_command(command: str) -> str:
     if HANDOFF_CONTEXT_ENV in command:
-        return False
+        return ""
     if any(token in command for token in AMBIGUOUS_TOKENS):
-        return False
+        return ""
     try:
         parts = shlex.split(command)
     except ValueError:
-        return False
+        return ""
     if len(parts) == 1 and parts[0] == HANDOFF_HELPER_COMMAND:
-        return True
-    return len(parts) == 2 and parts[0] == "python3" and parts[1] in HANDOFF_HELPER_SCRIPT_COMMANDS
+        script = Path(__file__).with_name("handoff_info.py")
+        return f"python3 {shlex.quote(str(script))}"
+    if len(parts) == 2 and parts[0] == "python3" and parts[1] in HANDOFF_HELPER_SCRIPT_COMMANDS:
+        return command
+    return ""
 
 
 def ensure_session_mapping(hook_data: dict[str, Any], home: Path) -> None:

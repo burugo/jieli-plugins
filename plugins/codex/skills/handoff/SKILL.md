@@ -29,7 +29,7 @@ Do not use this skill for ordinary status updates or to read/search other thread
 Run the helper exactly as a plain command so the `PreToolUse` hook can inject the current `session_id`, `transcript_path`, and `cwd`:
 
 ```bash
-python3 "${PLUGIN_ROOT:-$CLAUDE_PLUGIN_ROOT}/scripts/handoff_info.py"
+jieli-handoff-info
 ```
 
 Expected JSON shape:
@@ -94,8 +94,8 @@ My request:
 If the thread was resolved with high confidence, assemble the handoff prompt in this shape. The first two lines are fixed; the body is the goal-filtered plain-text bullet context from step 2. Include helper metadata such as repo/cwd/branch/status only when useful for the request.
 
 ```text
-Continuing work from Jieli thread <THREAD_ID> (<URL>).
-When you lack specific information, use the jieli skill to read thread <THREAD_ID>.
+Continuing work from Jieli thread <THREAD_ID>.
+When you lack specific information, use the jieli skill to read the thread.
 
 Relevant files: <path1> <path2> <path3> ...
 

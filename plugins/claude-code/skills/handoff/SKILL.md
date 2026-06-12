@@ -93,8 +93,8 @@ My request:
 If the thread was resolved with high confidence, assemble the handoff prompt in this shape. The first two lines are fixed; the body is the goal-filtered plain-text bullet context from step 2. Include helper metadata such as repo/cwd/branch/status only when useful for the request.
 
 ```text
-Continuing work from Jieli thread <THREAD_ID> (<URL>).
-When you lack specific information, use the jieli skill to read thread <THREAD_ID>.
+Continuing work from Jieli thread <THREAD_ID>.
+When you lack specific information, use the jieli skill to read the thread.
 
 Relevant files: <path1> <path2> <path3> ...
 

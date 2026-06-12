@@ -1195,7 +1195,8 @@ class CodexCommitTrailerTests(PluginScriptTestCase):
 
         updated = response["hookSpecificOutput"]["updatedInput"]["command"]
         self.assertIn("JIELI_HANDOFF_CONTEXT_B64=", updated)
-        self.assertTrue(updated.endswith(" jieli-handoff-info"))
+        self.assertIn(" python3 ", updated)
+        self.assertTrue(updated.endswith("/scripts/handoff_info.py"))
         encoded = updated.split("JIELI_HANDOFF_CONTEXT_B64=", 1)[1].split(" ", 1)[0].strip("'")
         context = json.loads(base64.b64decode(encoded).decode("utf-8"))
         self.assertEqual(context["session_id"], "codex-handoff")
@@ -1408,6 +1409,21 @@ class CodexReadThreadTests(PluginScriptTestCase):
 
 
 class CodexPluginManifestTests(PluginScriptTestCase):
+    def test_bin_handoff_info_wrapper_resolves_plugin_root_without_env(self):
+        wrapper = PLUGIN_ROOT / "bin" / "jieli-handoff-info"
+
+        result = subprocess.run(
+            [str(wrapper), "--help"],
+            env={},
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=5,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("usage:", result.stdout)
+
     def test_sync_hooks_do_not_run_on_user_prompt_submit(self):
         hooks = json.loads((PLUGIN_ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8"))
 

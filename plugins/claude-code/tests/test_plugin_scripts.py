@@ -1702,7 +1702,8 @@ class CommitTrailerTests(PluginScriptTestCase):
 
         updated = response["hookSpecificOutput"]["updatedInput"]["command"]
         self.assertIn("JIELI_HANDOFF_CONTEXT_B64=", updated)
-        self.assertTrue(updated.endswith(" jieli-handoff-info"))
+        self.assertIn(" python3 ", updated)
+        self.assertTrue(updated.endswith("/scripts/handoff_info.py"))
         encoded = updated.split("JIELI_HANDOFF_CONTEXT_B64=", 1)[1].split(" ", 1)[0].strip("'")
         context = json.loads(base64.b64decode(encoded).decode("utf-8"))
         self.assertEqual(context["session_id"], "cc-handoff")
