@@ -717,7 +717,7 @@ function truncateToolOutput(text, maxChars = TOOL_OUTPUT_MAX_CHARS) {
 function shouldSkipUserMessage(content) {
   const text = textFromContent(content).trimStart();
   if (!text) return true;
-  return ["<codex_internal_context", "<skill>", "Base directory for this skill:", "# AGENTS.md instructions for "].some((prefix) => text.startsWith(prefix));
+  return ["<codex_internal_context", "<turn_aborted", "<skill>", "Base directory for this skill:", "# AGENTS.md instructions for "].some((prefix) => text.startsWith(prefix));
 }
 
 function isEnvironmentContextText(text) {

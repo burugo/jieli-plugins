@@ -232,6 +232,7 @@ test("filters Codex handoff summaries, git directives, internal context, loaded 
   writeJsonl(transcript, [
     { type: "session_meta", payload: { id: "codex-filter", cwd: "/Users/alice/work/jieli" } },
     { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "<codex_internal_context>resume</codex_internal_context>" }] } },
+    { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "<turn_aborted></turn_aborted>" }] } },
     { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: windowsEnvironmentContext }] } },
     { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: agentsBlock }] } },
     { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: skillBlock }] } },
@@ -255,7 +256,7 @@ test("filters Codex handoff summaries, git directives, internal context, loaded 
   assert.equal(payload.thread.title, "threads list, hidden branch name, just show repo");
   assert.equal(Object.hasOwn(payload.thread, "metadata"), false);
   const raw = JSON.stringify(payload);
-  assert.doesNotMatch(raw, /<environment_context>|codex_internal_context|AI AGENT PROTOCOLS|Spec-Driven Planning|Files mentioned by the user|codex-clipboard|do not upload this summary|compacted implementation detail|::git-/);
+  assert.doesNotMatch(raw, /<environment_context>|codex_internal_context|turn_aborted|AI AGENT PROTOCOLS|Spec-Driven Planning|Files mentioned by the user|codex-clipboard|do not upload this summary|compacted implementation detail|::git-/);
 });
 
 test("normalizes Codex repo metadata, data URL images, local image events, and attachment cache", async () => {
