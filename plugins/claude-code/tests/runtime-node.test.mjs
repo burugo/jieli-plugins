@@ -411,6 +411,32 @@ test("configuration, upload, lock, and transcript flush helpers match hook behav
     assert.equal(runtime.requiredEnv("JIELI_API_KEY", "CLAUDE_PLUGIN_OPTION_API_KEY"), "settings-key");
     assert.equal(runtime.optionalEnv("JIELI_BASE_URL", "CLAUDE_PLUGIN_OPTION_BASE_URL"), "https://settings.example.test");
   });
+  const bomHome = makeTempDir();
+  mkdirSync(join(bomHome, ".config", "jieli"), { recursive: true });
+  writeFileSync(
+    join(bomHome, ".config", "jieli", "settings.json"),
+    `\uFEFF${JSON.stringify({ api_key: "bom-settings-key", base_url: "https://bom.example.test/" })}`,
+    "utf8",
+  );
+  await withEnv({ HOME: bomHome, JIELI_API_KEY: undefined, CLAUDE_PLUGIN_OPTION_API_KEY: undefined, JIELI_BASE_URL: undefined }, async () => {
+    assert.deepEqual(runtime.missingConfigVars(), []);
+    assert.equal(runtime.requiredEnv("JIELI_API_KEY", "CLAUDE_PLUGIN_OPTION_API_KEY"), "bom-settings-key");
+    assert.equal(runtime.optionalEnv("JIELI_BASE_URL", "CLAUDE_PLUGIN_OPTION_BASE_URL"), "https://bom.example.test");
+  });
+  const malformedHome = makeTempDir();
+  mkdirSync(join(malformedHome, ".config", "jieli"), { recursive: true });
+  writeFileSync(join(malformedHome, ".config", "jieli", "settings.json"), '{"api_key":', "utf8");
+  await withEnv({ HOME: malformedHome, JIELI_API_KEY: undefined, CLAUDE_PLUGIN_OPTION_API_KEY: undefined }, async () => {
+    assert.throws(
+      () => runtime.requiredEnv("JIELI_API_KEY", "CLAUDE_PLUGIN_OPTION_API_KEY"),
+      (error) => {
+        assert.match(error.message, /JIELI_API_KEY/);
+        assert.match(error.message, /failed to parse ~\/\.config\/jieli\/settings\.json/);
+        assert.doesNotMatch(error.message, /api_key/);
+        return true;
+      },
+    );
+  });
   await withEnv({ HOME: settingsHome, JIELI_API_KEY: "env-key", JIELI_BASE_URL: "https://env.example.test/" }, async () => {
     assert.equal(runtime.requiredEnv("JIELI_API_KEY", "CLAUDE_PLUGIN_OPTION_API_KEY"), "env-key");
     assert.equal(runtime.optionalEnv("JIELI_BASE_URL", "CLAUDE_PLUGIN_OPTION_BASE_URL"), "https://env.example.test/");

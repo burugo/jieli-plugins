@@ -323,6 +323,34 @@ test("configuration, upload, lock, session mapping, and missing transcript behav
     assert.equal(runtime.optionalEnv("JIELI_BASE_URL"), "https://jieli.example.test");
   });
 
+  const bomHome = makeTempDir();
+  await withEnv({ HOME: bomHome, JIELI_API_KEY: undefined, JIELI_BASE_URL: undefined }, async () => {
+    mkdirSync(join(bomHome, ".config", "jieli"), { recursive: true });
+    writeFileSync(
+      join(bomHome, ".config", "jieli", "settings.json"),
+      `\uFEFF${JSON.stringify({ api_key: "bom-settings-key", base_url: "https://bom.example.test/" })}`,
+      "utf8",
+    );
+    assert.deepEqual(runtime.missingConfigVars(), []);
+    assert.equal(runtime.requiredEnv("JIELI_API_KEY"), "bom-settings-key");
+    assert.equal(runtime.optionalEnv("JIELI_BASE_URL"), "https://bom.example.test");
+  });
+
+  const malformedHome = makeTempDir();
+  await withEnv({ HOME: malformedHome, JIELI_API_KEY: undefined, JIELI_BASE_URL: undefined }, async () => {
+    mkdirSync(join(malformedHome, ".config", "jieli"), { recursive: true });
+    writeFileSync(join(malformedHome, ".config", "jieli", "settings.json"), '{"api_key":', "utf8");
+    assert.throws(
+      () => runtime.requiredEnv("JIELI_API_KEY"),
+      (error) => {
+        assert.match(error.message, /JIELI_API_KEY/);
+        assert.match(error.message, /failed to parse ~\/\.config\/jieli\/settings\.json/);
+        assert.doesNotMatch(error.message, /api_key/);
+        return true;
+      },
+    );
+  });
+
   await withEnv({ HOME: tmp, JIELI_API_KEY: "env-key", JIELI_BASE_URL: "https://env.example.test/" }, async () => {
     assert.equal(runtime.requiredEnv("JIELI_API_KEY"), "env-key");
     assert.equal(runtime.optionalEnv("JIELI_BASE_URL"), "https://env.example.test");

@@ -96,13 +96,21 @@ function readStdin() {
   }
 }
 
-function readJson(path, fallback = {}) {
+function readJsonResult(path, fallback = {}) {
   try {
-    const value = JSON.parse(readFileSync(path, "utf8"));
-    return value && typeof value === "object" && !Array.isArray(value) ? value : fallback;
-  } catch {
-    return fallback;
+    const raw = readFileSync(path, "utf8").replace(/^\uFEFF/, "");
+    const value = JSON.parse(raw);
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      return { value, error: null };
+    }
+    return { value: fallback, error: new Error("expected JSON object") };
+  } catch (error) {
+    return { value: fallback, error };
   }
+}
+
+function readJson(path, fallback = {}) {
+  return readJsonResult(path, fallback).value;
 }
 
 function writeJsonAtomic(path, value, mode = 0o600) {
@@ -126,12 +134,20 @@ function settingsPath(home = homeDir()) {
 }
 
 function settingsValue(...keys) {
-  const settings = readJson(settingsPath(), {});
+  const settings = readJsonResult(settingsPath(), {}).value;
   for (const key of keys) {
     const value = settings[key];
     if (typeof value === "string" && value.trim()) return value.trim();
   }
   return "";
+}
+
+function settingsParseError() {
+  const path = settingsPath();
+  if (!existsSync(path)) return "";
+  const { error } = readJsonResult(path, {});
+  if (!error) return "";
+  return `failed to parse ~/.config/jieli/settings.json: ${error.message}`;
 }
 
 function requiredEnv(...names) {
@@ -142,7 +158,8 @@ function requiredEnv(...names) {
     const value = settingsValue("api_key", "JIELI_API_KEY");
     if (value) return value;
   }
-  throw new Error(names[0]);
+  const detail = settingsParseError();
+  throw new Error(detail ? `${names[0]} (${detail})` : names[0]);
 }
 
 function optionalEnv(...names) {
