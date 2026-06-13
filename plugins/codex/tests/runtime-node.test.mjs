@@ -420,7 +420,7 @@ test("handoff info and commit trailer helpers support Codex shell aliases and No
   assert.equal(info.cwd, tmp);
   assert.equal(info.branch, "feature/handoff");
 
-  for (const toolName of ["Bash", "Shell", "shell_command"]) {
+  for (const toolName of ["Bash", "Shell", "shell_command", "exec_command"]) {
     const response = runtime.buildHookResponse({ session_id: "codex-handoff", transcript_path: "/tmp/codex-session.jsonl", cwd: "/repo", tool_name: toolName, tool_input: { command: "jieli-handoff-info" } });
     const updated = response.hookSpecificOutput.updatedInput.command;
     assert.match(updated, /JIELI_HANDOFF_CONTEXT_B64=/);
@@ -487,7 +487,7 @@ test("plugin wrappers, skills, docs, manifests, and hooks describe the split Jie
 
   const hooks = JSON.parse(readFileSync(join(pluginRoot, "hooks", "hooks.json"), "utf8"));
   assert.equal("UserPromptSubmit" in hooks.hooks, false);
-  assert.equal(hooks.hooks.PreToolUse[0].matcher, "^(Bash|Shell|shell_command)$");
+  assert.equal(hooks.hooks.PreToolUse[0].matcher, "^(Bash|Shell|shell_command|exec_command)$");
   const commands = Object.values(hooks.hooks).flatMap((configs) => configs.flatMap((config) => (config.hooks || []).map((hook) => hook.command)));
   assert.ok(commands.length > 0);
   for (const command of commands) {

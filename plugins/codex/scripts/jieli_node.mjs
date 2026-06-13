@@ -1167,7 +1167,7 @@ function commitTrailerMain(args) {
 }
 
 function buildHookResponse(hookData) {
-  if (!["Bash", "Shell", "shell_command"].includes(hookData.tool_name)) return {};
+  if (!["Bash", "Shell", "shell_command", "exec_command"].includes(hookData.tool_name)) return {};
   const command = hookData.tool_input?.command;
   if (typeof command !== "string" || !command) return {};
   let updated = updatedHandoffCommand(command, hookData);
