@@ -1,11 +1,11 @@
 {
-  "name": "jieli",
+  "name": "jieliapp",
   "interface": {
     "displayName": "Jieli"
   },
   "plugins": [
     {
-      "name": "codex",
+      "name": "jieli",
       "source": {
         "source": "local",
         "path": "./plugins/codex"

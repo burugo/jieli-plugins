@@ -13,7 +13,7 @@ Add the marketplace in Claude Code:
 Install the plugin:
 
 ```text
-/plugin install claude-code@jieli
+/plugin install jieli@jieliapp
 ```
 
 Then get an API key from [https://jieli.app](https://jieli.app) and configure it for Claude Code.
@@ -47,7 +47,7 @@ codex plugin marketplace add jieliapp/plugins
 Install the plugin:
 
 ```bash
-codex plugin add codex@jieli
+codex plugin add jieli@jieliapp
 ```
 
 Then enable the plugin and trust its hooks with `/hooks`.

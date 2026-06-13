@@ -1,6 +1,6 @@
 .PHONY: test validate
 
-PLUGIN_CREATOR_DIR := /Users/alice/Library/Mobile Documents/com~apple~CloudDocs/dotfiles/config/claude/skills/.system/plugin-creator
+PLUGIN_CREATOR_DIR ?= $(HOME)/Library/Mobile Documents/com~apple~CloudDocs/dotfiles/config/claude/skills/.system/plugin-creator
 VALIDATOR_DEPS_DIR ?= /tmp/codex-plugin-validator-pyyaml
 
 test:
