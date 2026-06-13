@@ -583,6 +583,15 @@ test("handoff info and commit trailer helpers inject Node-based context and trai
   assert.equal(cliInfo.thread_id, "T-cc-1");
   assert.deepEqual(runtime.buildHookResponse({ session_id: "cc-handoff", tool_name: "Bash", tool_input: { command: "jieli-handoff-info | cat" } }), {});
 
+  await withEnv({ HOME: tmp, JIELI_HANDOFF_CONTEXT_B64: undefined, JIELI_BASE_URL: "https://jieli.example.test" }, async () => {
+    runtime.writeHandoffContext({ session_id: "cc-state", transcript_path: join(tmp, "state.jsonl"), cwd: tmp });
+    const stateInfo = runtime.buildHandoffInfo();
+    assert.equal(stateInfo.confidence, "high");
+    assert.equal(stateInfo.thread_id, "T-cc-state");
+    assert.equal(stateInfo.url, "https://jieli.example.test/threads/T-cc-state");
+    assert.equal(stateInfo.reason, "hook context persisted by Claude Code hook");
+  });
+
   await withEnv({ HOME: tmp }, async () => {
     mkdirSync(join(tmp, ".jieli"), { recursive: true });
     writeFileSync(join(tmp, ".jieli", "claude-sessions.json"), JSON.stringify({ "cc-chain": { provider_thread_id: "cc-chain", base_url: "https://jieli.example.test/" } }), "utf8");

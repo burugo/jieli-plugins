@@ -23,6 +23,7 @@ const MISSING_CONFIG_NOTICE_TRIGGERS = new Set(["stop", "precompact"]);
 const TRANSCRIPT_QUIET_MS = 250;
 const TRANSCRIPT_FLUSH_TIMEOUT_MS = 1500;
 const ATTACHMENT_CACHE_FILE = "claude-attachments.json";
+const HANDOFF_CONTEXT_FILE = "claude-handoff-context.json";
 const SETTINGS_FILE_NAME = "settings.json";
 const TRAILER_KEY = "Jieli-Thread";
 const HANDOFF_CONTEXT_ENV = "JIELI_HANDOFF_CONTEXT_B64";
@@ -324,13 +325,14 @@ function loadHookStdin() {
 async function syncMain(args) {
   const opts = parseArgs(args, { boolean: new Set(["jieli-hook"]) });
   try {
+    const hookData = loadHookStdin();
+    writeHandoffContext(hookData);
     const missing = missingConfigVars();
     if (missing.length) {
       const response = buildMissingConfigHookResponse(opts.trigger || "", missing);
       if (Object.keys(response).length) console.log(JSON.stringify(response));
       throw new Error(missing.join(", "));
     }
-    const hookData = loadHookStdin();
     const sessionId = hookData.session_id || "";
     const lock = acquireSyncLock(sessionId);
     if (!lock.acquired) return 0;
@@ -922,7 +924,9 @@ function commitTrailerMain(args) {
   parseArgs(args, { boolean: new Set(["jieli-hook"]) });
   let response = {};
   try {
-    response = buildHookResponse(JSON.parse(readStdin() || "{}"));
+    const hookData = JSON.parse(readStdin() || "{}");
+    writeHandoffContext(hookData);
+    response = buildHookResponse(hookData);
   } catch {
     response = {};
   }
@@ -1275,7 +1279,7 @@ function handoffInfoMain(args = []) {
 }
 
 function buildHandoffInfo(env = process.env, contextB64 = "") {
-  const context = decodeContext(contextB64 || env[HANDOFF_CONTEXT_ENV] || "");
+  const context = decodeContext(contextB64 || env[HANDOFF_CONTEXT_ENV] || "") || readHandoffContext();
   if (!context) return missingInfo("missing hook context");
   const sessionId = String(context.session_id || "").trim();
   if (!sessionId) return missingInfo("missing session_id in hook context");
@@ -1295,7 +1299,33 @@ function buildHandoffInfo(env = process.env, contextB64 = "") {
     repo_url: repoUrlFromCwd(cwd),
     branch: gitBranch(cwd),
     worktree_status: worktreeStatus(cwd),
-    reason: "hook context injected by PreToolUse",
+    reason: context.from_state ? "hook context persisted by Claude Code hook" : "hook context injected by PreToolUse",
+  };
+}
+
+function writeHandoffContext(hookData) {
+  if (!hookData || typeof hookData !== "object" || Array.isArray(hookData)) return;
+  const sessionId = String(hookData.session_id || "").trim();
+  if (!sessionId) return;
+  const context = {
+    session_id: sessionId,
+    transcript_path: String(hookData.transcript_path || hookData.session_path || "").trim(),
+    cwd: String(hookData.cwd || "").trim(),
+    updated_at: new Date().toISOString(),
+  };
+  writeJsonAtomic(join(homeDir(), ".jieli", HANDOFF_CONTEXT_FILE), context);
+}
+
+function readHandoffContext() {
+  const context = readJson(join(homeDir(), ".jieli", HANDOFF_CONTEXT_FILE), null);
+  if (!context || typeof context !== "object" || Array.isArray(context)) return null;
+  const sessionId = String(context.session_id || "").trim();
+  if (!sessionId) return null;
+  return {
+    session_id: sessionId,
+    transcript_path: String(context.transcript_path || context.session_path || "").trim(),
+    cwd: String(context.cwd || "").trim(),
+    from_state: true,
   };
 }
 
@@ -1370,6 +1400,7 @@ export {
   uploadPayload,
   validateThreadId,
   waitForTranscriptFlush,
+  writeHandoffContext,
   writeSessionMapping,
 };
 
