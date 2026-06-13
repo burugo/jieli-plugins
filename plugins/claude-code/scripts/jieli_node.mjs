@@ -841,11 +841,10 @@ function transcriptSignature(path) {
 }
 
 async function uploadPayload(payload, baseUrl, apiKey) {
-  const response = await fetch(`${baseUrl.replace(/\/+$/, "")}/plugin/threads/upload`, {
+  const response = await fetchWithTimeout(`${baseUrl.replace(/\/+$/, "")}/plugin/threads/upload`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(20000),
   });
   if (!response.ok) throw new Error(await formatHttpError(response));
   return response.json();
@@ -858,16 +857,25 @@ async function uploadAttachment(path, baseUrl, apiKey) {
 }
 
 async function uploadAttachmentData(data, mediaType, baseUrl, apiKey) {
-  const response = await fetch(`${baseUrl.replace(/\/+$/, "")}/plugin/attachments`, {
+  const response = await fetchWithTimeout(`${baseUrl.replace(/\/+$/, "")}/plugin/attachments`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({ data: Buffer.from(data).toString("base64"), mediaType }),
-    signal: AbortSignal.timeout(20000),
   });
   if (!response.ok) throw new Error(await formatHttpError(response));
   const body = await response.json();
   if (!body || typeof body.url !== "string" || !body.url) throw new Error("attachment upload response missing url");
   return body.url;
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 20000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function uploadAttachmentCached(path, baseUrl, apiKey, uploadFn = uploadAttachment) {
@@ -1161,9 +1169,8 @@ async function fetchThreadExport(threadId, baseUrl, apiKey, format = "md", trunc
   if (!["md", "json"].includes(format)) throw new Error("export_format must be md or json");
   let url = `${baseUrl.replace(/\/+$/, "")}/threads/${encodeURIComponent(cleanId)}.${format}`;
   if (format === "md" && truncateToolResults) url += "?truncate_tool_results=1";
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     headers: { Authorization: `Bearer ${apiKey}` },
-    signal: AbortSignal.timeout(20000),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.text();
@@ -1210,9 +1217,8 @@ async function fetchThreads(query, baseUrl, apiKey, opts) {
   if (opts.repo) params.set("repo", opts.repo);
   if (opts.label) params.set("label", opts.label);
   if (opts.page) params.set("page", String(opts.page));
-  const response = await fetch(`${baseUrl.replace(/\/+$/, "")}/plugin/threads?${params}`, {
+  const response = await fetchWithTimeout(`${baseUrl.replace(/\/+$/, "")}/plugin/threads?${params}`, {
     headers: { Authorization: `Bearer ${apiKey}` },
-    signal: AbortSignal.timeout(20000),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();

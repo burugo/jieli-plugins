@@ -38,6 +38,7 @@ test("runtime entrypoints do not invoke Python", () => {
     const content = readFileSync(join(pluginRoot, file), "utf8");
     assert.doesNotMatch(content, /\bpython(?:3)?\b|\bpy -3\b/, file);
   }
+  assert.doesNotMatch(readFileSync(join(pluginRoot, "scripts", "jieli_node.mjs"), "utf8"), /AbortSignal\.timeout/);
 });
 
 test("redaction covers Codex payload secrets and malformed URL regressions", () => {
