@@ -118,7 +118,7 @@ export function runNode(args, options = {}) {
 }
 
 export function decodeHandoffContext(command) {
-  const match = /JIELI_HANDOFF_CONTEXT_B64=(?:'([^']+)'|([^\s]+))/.exec(command);
+  const match = /(?:JIELI_HANDOFF_CONTEXT_B64=|--context-b64\s+)(?:'([^']+)'|([^\s]+))/.exec(command);
   if (!match) throw new Error("handoff context not found");
   return JSON.parse(Buffer.from(match[1] || match[2], "base64").toString("utf8"));
 }

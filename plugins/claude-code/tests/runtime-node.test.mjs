@@ -362,10 +362,17 @@ test("replaces compaction summaries and renders Claude bash transcript tags", as
   const tmp = makeTempDir();
   const fakeKey = `jieli_${"a".repeat(30)}`;
   const prose = "我用 `!rm -rf x` 执行了：<bash-input>rm -rf x</bash-input><bash-stdout>(Bash completed with no output)</bash-stdout> 你看下";
+  const unflaggedCompactSummary =
+    "This session is being continued from a previous conversation that ran out of context. " +
+    "The conversation is summarized below:\n\n" +
+    "Current progress:\n\n" +
+    "- Repo: `/Users/alice/work/jieli`.\n" +
+    "- This Claude compacted implementation detail should not be uploaded.\n".repeat(20);
   const transcript = join(tmp, "session.jsonl");
   writeJsonl(transcript, [
     { type: "user", uuid: "u-real", sessionId: "cc-bash", cwd: "/Users/alice/work/jieli", message: { role: "user", content: "原始第一条消息" } },
     { type: "user", uuid: "u-compact", sessionId: "cc-bash", isCompactSummary: true, isVisibleInTranscriptOnly: true, message: { role: "user", content: "This session is being continued. " + "x".repeat(5000) } },
+    { type: "user", uuid: "u-compact-text", sessionId: "cc-bash", message: { role: "user", content: unflaggedCompactSummary } },
     { type: "user", uuid: "u-bash-in", sessionId: "cc-bash", cwd: "/Users/alice/work/jieli", message: { role: "user", content: "<bash-input>echo $JIELI_API_KEY</bash-input>" } },
     { type: "user", uuid: "u-bash-out", sessionId: "cc-bash", message: { role: "user", content: `<bash-stdout>${fakeKey}</bash-stdout><bash-stderr></bash-stderr>` } },
     { type: "user", uuid: "u-rm", sessionId: "cc-bash", message: { role: "user", content: "<bash-input>rm -rf /tmp/x</bash-input><bash-stdout>(Bash completed with no output)</bash-stdout><bash-stderr></bash-stderr>" } },
@@ -375,12 +382,15 @@ test("replaces compaction summaries and renders Claude bash transcript tags", as
   const payload = await runtime.buildPayloadFromHook({ session_id: "cc-bash", transcript_path: transcript }, "https://jieli.example.test");
   assert.equal(payload.thread.title, "原始第一条消息");
   assert.equal(payload.thread.messages[1].content, runtime.COMPACTION_PLACEHOLDER);
-  assert.equal(payload.thread.messages[2].content, "```console\n$ echo $JIELI_API_KEY\n[REDACTED:jieli-api-key]\n```");
-  assert.equal(payload.thread.messages[3].content, "```console\n$ rm -rf /tmp/x\n# (no output)\n```");
-  assert.equal(payload.thread.messages[4].content, prose);
+  assert.equal(payload.thread.messages[2].content, runtime.COMPACTION_PLACEHOLDER);
+  assert.equal(runtime.COMPACTION_PLACEHOLDER, "[Context automatically compacted]");
+  assert.equal(payload.thread.messages[3].content, "```console\n$ echo $JIELI_API_KEY\n[REDACTED:jieli-api-key]\n```");
+  assert.equal(payload.thread.messages[4].content, "```console\n$ rm -rf /tmp/x\n# (no output)\n```");
+  assert.equal(payload.thread.messages[5].content, prose);
   const raw = JSON.stringify(payload);
   assert.doesNotMatch(raw, new RegExp(fakeKey));
   assert.doesNotMatch(raw, /x{5000}/);
+  assert.doesNotMatch(raw, /Claude compacted implementation detail/);
 });
 
 test("configuration, upload, lock, and transcript flush helpers match hook behavior", async () => {
@@ -554,9 +564,22 @@ test("handoff info and commit trailer helpers inject Node-based context and trai
 
   const handoff = runtime.buildHookResponse({ session_id: "cc-handoff", transcript_path: "/tmp/claude-session.jsonl", cwd: "/repo", tool_name: "Bash", tool_input: { command: "jieli-handoff-info" } });
   const handoffCommand = handoff.hookSpecificOutput.updatedInput.command;
-  assert.match(handoffCommand, /JIELI_HANDOFF_CONTEXT_B64=/);
-  assert.match(handoffCommand, /node .*jieli_node\.mjs handoff-info/);
+  assert.doesNotMatch(handoffCommand, /JIELI_HANDOFF_CONTEXT_B64=/);
+  assert.match(handoffCommand, /node .*jieli_node\.mjs handoff-info --context-b64 /);
   assert.deepEqual(decodeHandoffContext(handoffCommand), { session_id: "cc-handoff", transcript_path: "/tmp/claude-session.jsonl", cwd: "/repo" });
+  for (const command of [
+    "jieli-handoff-info.cmd",
+    "jieli-handoff-info.exe",
+    "C:\\Users\\Administrator\\.claude\\plugins\\cache\\jieliapp\\claude-code\\bin\\jieli-handoff-info.cmd",
+    "& 'C:\\Users\\Administrator\\.claude\\plugins\\cache\\jieliapp\\claude-code\\bin\\jieli-handoff-info.cmd'",
+  ]) {
+    const response = runtime.buildHookResponse({ session_id: "cc-win", transcript_path: "C:\\Users\\Administrator\\.claude\\projects\\session.jsonl", cwd: "C:\\repo", tool_name: "Bash", tool_input: { command } });
+    const updated = response.hookSpecificOutput.updatedInput.command;
+    assert.match(updated, /handoff-info --context-b64 /);
+    assert.deepEqual(decodeHandoffContext(updated), { session_id: "cc-win", transcript_path: "C:\\Users\\Administrator\\.claude\\projects\\session.jsonl", cwd: "C:\\repo" });
+  }
+  const cliInfo = await withEnv({ JIELI_HANDOFF_CONTEXT_B64: undefined, JIELI_BASE_URL: "https://jieli.example.test" }, () => runtime.buildHandoffInfo(process.env, encoded));
+  assert.equal(cliInfo.thread_id, "T-cc-1");
   assert.deepEqual(runtime.buildHookResponse({ session_id: "cc-handoff", tool_name: "Bash", tool_input: { command: "jieli-handoff-info | cat" } }), {});
 
   await withEnv({ HOME: tmp }, async () => {

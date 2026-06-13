@@ -33,8 +33,13 @@ const MODEL_ALIAS_ENV_NAMES = [
   "ANTHROPIC_DEFAULT_SONNET_MODEL",
   "ANTHROPIC_DEFAULT_OPUS_MODEL",
 ];
-const COMPACTION_PLACEHOLDER =
-  "[Context compacted - earlier conversation summarized to continue past the context window]";
+const COMPACTION_PLACEHOLDER = "[Context automatically compacted]";
+const CLAUDE_CONTINUED_SESSION_RE =
+  /^This session is being continued from a previous conversation that ran out of context\./i;
+const CODEX_AUTO_COMPACTION_PREAMBLE_RE =
+  /^Another language model started to solve this problem and produced a summary of its thinking process\./i;
+const AUTO_COMPACTION_CURRENT_PROGRESS_RE = /^Current progress:\s*(?:\n|$)/i;
+const AUTO_COMPACTION_SECTION_RE = /^(?:Important context(?: and constraints)?|What remains to do|Relevant files|Critical examples):\s*$/im;
 const BASH_NO_OUTPUT_MARKERS = new Set(["", "(Bash completed with no output)"]);
 const SUPPORTED_IMAGE_MEDIA_TYPES = new Map([
   [".png", "image/png"],
@@ -420,6 +425,9 @@ async function parseTranscript(path, fallbackSessionId = "", imageUploader = nul
       role = normalizedRole(message.role || entry.type, content);
       content = normalizeLocalCommandMessage(role, content);
       if (content == null || isLoadedSkillBodyMessage(role, content)) continue;
+      if (role === "user" && isAutoCompactionSummaryText(textFromNormalizedContent(content))) {
+        content = COMPACTION_PLACEHOLDER;
+      }
     }
 
     const bash = role === "user" && typeof content === "string" ? parseBashBlock(content) : null;
@@ -643,6 +651,13 @@ function normalizeLocalCommandMessage(role, content) {
 
 function isLoadedSkillBodyMessage(role, content) {
   return role === "user" && textFromNormalizedContent(content).trimStart().startsWith("Base directory for this skill:");
+}
+
+function isAutoCompactionSummaryText(text) {
+  const trimmed = text.trimStart();
+  if (CLAUDE_CONTINUED_SESSION_RE.test(trimmed)) return true;
+  if (CODEX_AUTO_COMPACTION_PREAMBLE_RE.test(trimmed)) return true;
+  return AUTO_COMPACTION_CURRENT_PROGRESS_RE.test(trimmed) && AUTO_COMPACTION_SECTION_RE.test(trimmed);
 }
 
 function textFromNormalizedContent(content) {
@@ -932,17 +947,25 @@ function updatedHandoffCommand(command, hookData) {
     cwd: String(hookData.cwd || ""),
   };
   const encoded = Buffer.from(JSON.stringify(context), "utf8").toString("base64");
-  return `${HANDOFF_CONTEXT_ENV}=${quoteShell(encoded)} ${helper}`;
+  return `${helper} --context-b64 ${quoteShell(encoded)}`;
 }
 
 function resolvedHandoffHelperCommand(command) {
   if (command.includes(HANDOFF_CONTEXT_ENV) || AMBIGUOUS_TOKENS.some((token) => command.includes(token))) return "";
   const parts = shellSplit(command);
   if (!parts) return "";
-  if (parts.length === 1 && basename(parts[0]) === HANDOFF_HELPER_COMMAND) {
+  if ((parts.length === 1 && isHandoffHelper(parts[0])) || (parts.length === 2 && parts[0] === "&" && isHandoffHelper(parts[1]))) {
     return `node ${quoteShell(join(pluginRoot, "scripts", "jieli_node.mjs"))} handoff-info`;
   }
   return "";
+}
+
+function isHandoffHelper(part) {
+  const normalized = String(part || "").replace(/\\/g, "/").toLowerCase();
+  const name = normalized.split("/").pop();
+  return [HANDOFF_HELPER_COMMAND, `${HANDOFF_HELPER_COMMAND}.cmd`, `${HANDOFF_HELPER_COMMAND}.exe`].some(
+    (helper) => name === helper || normalized.endsWith(`/bin/${helper}`) || normalized.endsWith(`bin${helper}`),
+  );
 }
 
 function updatedCommitCommand(command, sessionId) {
@@ -1236,15 +1259,17 @@ function formatThreadsMarkdown(payload, baseUrl) {
 
 function handoffInfoMain(args = []) {
   if (args.includes("--help") || args.includes("-h")) {
-    console.log("usage: jieli-handoff-info");
+    console.log("usage: jieli-handoff-info [--context-b64 CONTEXT]");
     return 0;
   }
-  console.log(JSON.stringify(buildHandoffInfo(), Object.keys(buildHandoffInfo()).sort()));
+  const opts = parseArgs(args);
+  const info = buildHandoffInfo(process.env, opts.contextB64 || "");
+  console.log(JSON.stringify(info, Object.keys(info).sort()));
   return 0;
 }
 
-function buildHandoffInfo(env = process.env) {
-  const context = decodeContext(env[HANDOFF_CONTEXT_ENV] || "");
+function buildHandoffInfo(env = process.env, contextB64 = "") {
+  const context = decodeContext(contextB64 || env[HANDOFF_CONTEXT_ENV] || "");
   if (!context) return missingInfo("missing hook context");
   const sessionId = String(context.session_id || "").trim();
   if (!sessionId) return missingInfo("missing session_id in hook context");

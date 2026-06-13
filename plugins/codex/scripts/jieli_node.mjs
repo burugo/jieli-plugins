@@ -36,9 +36,12 @@ const MODEL_ALIAS_ENV_NAMES = [
   "ANTHROPIC_DEFAULT_SONNET_MODEL",
   "ANTHROPIC_DEFAULT_OPUS_MODEL",
 ];
-const COMPACTION_PLACEHOLDER =
-  "[Context compacted - earlier conversation summarized to continue past the context window]";
+const COMPACTION_PLACEHOLDER = "[Context automatically compacted]";
 const HANDOFF_SUMMARY_RE = /^(?:#{1,6}\s*)?\*{0,2}Handoff Summary\*{0,2}\s*(?:\n|$)/i;
+const CODEX_AUTO_COMPACTION_PREAMBLE_RE =
+  /^Another language model started to solve this problem and produced a summary of its thinking process\./i;
+const CODEX_AUTO_COMPACTION_CURRENT_PROGRESS_RE = /^Current progress:\s*(?:\n|$)/i;
+const CODEX_AUTO_COMPACTION_SECTION_RE = /^(?:Important context(?: and constraints)?|What remains to do|Relevant files|Critical examples):\s*$/im;
 const CODEX_GIT_DIRECTIVE_RE = /^[ \t]*::git-[A-Za-z0-9_-]+\{[^\n]*\}[ \t]*\n?/gm;
 const CODEX_USER_FILE_MENTIONS_RE =
   /^\s*#{0,6}\s*Files mentioned by the user:\s*\n[\s\S]*?^\s*#{0,6}\s*My request for Codex:\s*\n?/m;
@@ -447,6 +450,7 @@ async function parseTranscript(path, fallbackSessionId = "", imageUploader = nul
     if (entry.type !== "response_item") continue;
     const item = await messageFromResponseItem(payload, lineNumber, imageUploader, dataImageUploader);
     if (!item) continue;
+    if (item.role === "user" && isEnvironmentContextText(textFromContent(item.content))) continue;
     if (item.role === "user" && !title) title = textFromContent(item.content).trim().slice(0, 80);
     messages.push(item);
   }
@@ -674,8 +678,15 @@ function shouldSkipUserMessage(content) {
   return ["<codex_internal_context", "<skill>", "Base directory for this skill:", "# AGENTS.md instructions for "].some((prefix) => text.startsWith(prefix));
 }
 
+function isEnvironmentContextText(text) {
+  return String(text || "").trimStart().startsWith("<environment_context");
+}
+
 function isHandoffSummaryText(text) {
-  return HANDOFF_SUMMARY_RE.test(text.trimStart());
+  const trimmed = text.trimStart();
+  if (HANDOFF_SUMMARY_RE.test(trimmed)) return true;
+  if (CODEX_AUTO_COMPACTION_PREAMBLE_RE.test(trimmed)) return true;
+  return CODEX_AUTO_COMPACTION_CURRENT_PROGRESS_RE.test(trimmed) && CODEX_AUTO_COMPACTION_SECTION_RE.test(trimmed);
 }
 
 function cleanCodexText(text) {
@@ -1208,17 +1219,25 @@ function updatedHandoffCommand(command, hookData) {
     cwd: String(hookData.cwd || ""),
   };
   const encoded = Buffer.from(JSON.stringify(context), "utf8").toString("base64");
-  return `${HANDOFF_CONTEXT_ENV}=${quoteShell(encoded)} ${helper}`;
+  return `${helper} --context-b64 ${quoteShell(encoded)}`;
 }
 
 function resolvedHandoffHelperCommand(command) {
   if (command.includes(HANDOFF_CONTEXT_ENV) || AMBIGUOUS_TOKENS.some((token) => command.includes(token))) return "";
   const parts = shellSplit(command);
   if (!parts) return "";
-  if (parts.length === 1 && basename(parts[0]) === HANDOFF_HELPER_COMMAND) {
+  if ((parts.length === 1 && isHandoffHelper(parts[0])) || (parts.length === 2 && parts[0] === "&" && isHandoffHelper(parts[1]))) {
     return `node ${quoteShell(join(pluginRoot, "scripts", "jieli_node.mjs"))} handoff-info`;
   }
   return "";
+}
+
+function isHandoffHelper(part) {
+  const normalized = String(part || "").replace(/\\/g, "/").toLowerCase();
+  const name = normalized.split("/").pop();
+  return [HANDOFF_HELPER_COMMAND, `${HANDOFF_HELPER_COMMAND}.cmd`, `${HANDOFF_HELPER_COMMAND}.exe`].some(
+    (helper) => name === helper || normalized.endsWith(`/bin/${helper}`) || normalized.endsWith(`bin${helper}`),
+  );
 }
 
 function updatedCommitCommand(command, sessionId) {
@@ -1512,15 +1531,17 @@ function formatThreadsMarkdown(payload, baseUrl) {
 
 function handoffInfoMain(args = []) {
   if (args.includes("--help") || args.includes("-h")) {
-    console.log("usage: jieli-handoff-info");
+    console.log("usage: jieli-handoff-info [--context-b64 CONTEXT]");
     return 0;
   }
-  console.log(JSON.stringify(buildHandoffInfo(), Object.keys(buildHandoffInfo()).sort()));
+  const opts = parseArgs(args);
+  const info = buildHandoffInfo(process.env, opts.contextB64 || "");
+  console.log(JSON.stringify(info, Object.keys(info).sort()));
   return 0;
 }
 
-function buildHandoffInfo(env = process.env) {
-  const context = decodeContext(env[HANDOFF_CONTEXT_ENV] || "");
+function buildHandoffInfo(env = process.env, contextB64 = "") {
+  const context = decodeContext(contextB64 || env[HANDOFF_CONTEXT_ENV] || "");
   if (!context) return missingInfo("missing hook context");
   const transcriptPath = String(context.transcript_path || context.session_path || "").trim();
   const meta = readSessionMeta(transcriptPath);

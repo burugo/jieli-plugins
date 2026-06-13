@@ -167,35 +167,55 @@ test("normalizes Codex apply_patch, exec_command, and nonzero tool exits", async
 test("filters Codex handoff summaries, git directives, internal context, loaded instructions, and file mention prefixes", async () => {
   const tmp = makeTempDir();
   const longSummary = "**Handoff Summary**\n\n**Current task**\n" + "do not upload this summary\n".repeat(20);
+  const automaticCompactSummary =
+    "Another language model started to solve this problem and produced a summary of its thinking process. " +
+    "You also have access to the state of the tools that were used by that language model. " +
+    "Use this to build on the work that has already been done and avoid duplicating work. " +
+    "Here is the summary produced by the other language model, use the information in this summary to assist with your own analysis:\n" +
+    "Current progress:\n\n" +
+    "- Repo: `/Users/alice/work/jieli`.\n" +
+    "- This compacted implementation detail should not be uploaded.\n".repeat(20);
   const finalText = '已提交：`abc1234 fix sync`\n\n::git-stage{cwd="/Users/alice/work/jieli"}\n::git-commit{cwd="/Users/alice/work/jieli"}\n';
   const userText = "# Files mentioned by the user:\n\n## codex-clipboard-ba43.png: /var/folders/T/codex-clipboard-ba43.png\n\n## My request for Codex:\nthreads list, hidden branch name, just show repo";
   const agentsBlock = "# AGENTS.md instructions for /Users/alice/work/jieli <INSTRUCTIONS> #\n\n<INSTRUCTIONS>\n# AI AGENT PROTOCOLS v2.0\n</INSTRUCTIONS>";
   const skillBlock = "<skill>\n<name>claude-code-setup:spec-driven-planning</name>\n<path>/Users/alice/skills/spec-driven-planning/SKILL.md</path>\n# Spec-Driven Planning\n</skill>";
   const localLink = "use [$claude-code-setup:spec-driven-planning](/Users/alice/Library/Mobile Documents/com~apple~CloudDocs/dotfiles/config/claude/skills/spec-driven-planning/SKILL.md)";
+  const windowsEnvironmentContext =
+    "<environment_context>\n" +
+    "<cwd>C:\\Users\\Administrator\\.codex</cwd>\n" +
+    "<shell>powershell</shell>\n" +
+    "<current_date>2026-06-13</current_date>\n" +
+    "<timezone>Asia/Shanghai</timezone>\n" +
+    '<filesystem><workspace_roots><root>C:\\Users\\Administrator\\.codex</root></workspace_roots><permission_profile type="managed"><file_system type="restricted"><entry access="read"><special>:root</special></entry><entry access="write"><path>C:\\Users\\Administrator\\.codex</path></entry></file_system></permission_profile></filesystem>\n' +
+    "</environment_context>";
   const transcript = join(tmp, "session.jsonl");
   writeJsonl(transcript, [
     { type: "session_meta", payload: { id: "codex-filter", cwd: "/Users/alice/work/jieli" } },
     { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "<codex_internal_context>resume</codex_internal_context>" }] } },
+    { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: windowsEnvironmentContext }] } },
     { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: agentsBlock }] } },
     { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: skillBlock }] } },
     { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: userText }] } },
     { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: localLink }] } },
     { type: "response_item", payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: longSummary }] } },
+    { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: automaticCompactSummary }] } },
     { type: "response_item", payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: finalText }] } },
   ]);
 
   const payload = await runtime.buildPayloadFromHook({ session_id: "codex-filter", transcript_path: transcript }, "https://jieli.example.test");
-  assert.deepEqual(payload.thread.messages.map((message) => message.role), ["user", "user", "assistant", "assistant"]);
+  assert.deepEqual(payload.thread.messages.map((message) => message.role), ["user", "user", "assistant", "user", "assistant"]);
   assert.equal(payload.thread.messages[0].content, "threads list, hidden branch name, just show repo");
   assert.equal(
     payload.thread.messages[1].content,
     "use [$claude-code-setup:spec-driven-planning](file:///Users/alice/Library/Mobile%20Documents/com~apple~CloudDocs/dotfiles/config/claude/skills/spec-driven-planning/SKILL.md)",
   );
   assert.equal(payload.thread.messages[2].content, runtime.COMPACTION_PLACEHOLDER);
-  assert.equal(payload.thread.messages[3].content, "已提交：`abc1234 fix sync`");
+  assert.equal(payload.thread.messages[3].content, runtime.COMPACTION_PLACEHOLDER);
+  assert.equal(payload.thread.messages[4].content, "已提交：`abc1234 fix sync`");
   assert.equal(payload.thread.title, "threads list, hidden branch name, just show repo");
+  assert.equal(Object.hasOwn(payload.thread, "metadata"), false);
   const raw = JSON.stringify(payload);
-  assert.doesNotMatch(raw, /codex_internal_context|AI AGENT PROTOCOLS|Spec-Driven Planning|Files mentioned by the user|codex-clipboard|do not upload this summary|::git-/);
+  assert.doesNotMatch(raw, /<environment_context>|codex_internal_context|AI AGENT PROTOCOLS|Spec-Driven Planning|Files mentioned by the user|codex-clipboard|do not upload this summary|compacted implementation detail|::git-/);
 });
 
 test("normalizes Codex repo metadata, data URL images, local image events, and attachment cache", async () => {
@@ -451,10 +471,23 @@ test("handoff info and commit trailer helpers support Codex shell aliases and No
   for (const toolName of ["Bash", "Shell", "shell_command", "exec_command"]) {
     const response = runtime.buildHookResponse({ session_id: "codex-handoff", transcript_path: "/tmp/codex-session.jsonl", cwd: "/repo", tool_name: toolName, tool_input: { command: "jieli-handoff-info" } });
     const updated = response.hookSpecificOutput.updatedInput.command;
-    assert.match(updated, /JIELI_HANDOFF_CONTEXT_B64=/);
-    assert.match(updated, /node .*jieli_node\.mjs handoff-info/);
+    assert.doesNotMatch(updated, /JIELI_HANDOFF_CONTEXT_B64=/);
+    assert.match(updated, /node .*jieli_node\.mjs handoff-info --context-b64 /);
     assert.deepEqual(decodeHandoffContext(updated), { session_id: "codex-handoff", transcript_path: "/tmp/codex-session.jsonl", cwd: "/repo" });
   }
+  for (const command of [
+    "jieli-handoff-info.cmd",
+    "jieli-handoff-info.exe",
+    "C:\\Users\\Administrator\\.codex\\plugins\\cache\\jieliapp\\jieli\\bin\\jieli-handoff-info.cmd",
+    "& 'C:\\Users\\Administrator\\.codex\\plugins\\cache\\jieliapp\\jieli\\bin\\jieli-handoff-info.cmd'",
+  ]) {
+    const response = runtime.buildHookResponse({ session_id: "codex-win", transcript_path: "C:\\Users\\Administrator\\.codex\\sessions\\rollout.jsonl", cwd: "C:\\repo", tool_name: "Shell", tool_input: { command } });
+    const updated = response.hookSpecificOutput.updatedInput.command;
+    assert.match(updated, /handoff-info --context-b64 /);
+    assert.deepEqual(decodeHandoffContext(updated), { session_id: "codex-win", transcript_path: "C:\\Users\\Administrator\\.codex\\sessions\\rollout.jsonl", cwd: "C:\\repo" });
+  }
+  const cliInfo = await withEnv({ JIELI_HANDOFF_CONTEXT_B64: undefined, JIELI_BASE_URL: "https://jieli.example.test" }, () => runtime.buildHandoffInfo(process.env, encoded));
+  assert.equal(cliInfo.thread_id, "T-stable-codex-id");
   assert.deepEqual(runtime.buildHookResponse({ session_id: "codex-handoff", tool_name: "Bash", tool_input: { command: "jieli-handoff-info | cat" } }), {});
 
   await withEnv({ HOME: tmp }, async () => {
