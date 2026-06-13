@@ -41,6 +41,45 @@ test("runtime entrypoints do not invoke Python", () => {
   assert.doesNotMatch(readFileSync(join(pluginRoot, "scripts", "jieli_node.mjs"), "utf8"), /AbortSignal\.timeout/);
 });
 
+test("helper command runtime contract is stable across OS shells", async () => {
+  const tmp = makeTempDir();
+  await withEnv({ HOME: tmp, JIELI_API_KEY: "jieli_test", JIELI_BASE_URL: "https://jieli.example.test/" }, async () => {
+    const readCommand = runtime.createCommandRuntime("read-thread", ["T-1", "--format=json", "--max-chars", "200"]);
+    assert.equal(readCommand.name, "read-thread");
+    assert.equal(readCommand.baseUrl, "https://jieli.example.test");
+    assert.equal(readCommand.apiKey, "jieli_test");
+    assert.deepEqual(readCommand.opts._, ["T-1"]);
+    assert.equal(readCommand.opts.format, "json");
+    assert.equal(readCommand.opts.maxChars, "200");
+
+    const findCommand = runtime.createCommandRuntime("find-threads", ["windows paths", "--repo", "jieli/app"]);
+    assert.equal(findCommand.name, "find-threads");
+    assert.equal(findCommand.baseUrl, "https://jieli.example.test");
+    assert.equal(findCommand.apiKey, "jieli_test");
+    assert.deepEqual(findCommand.opts._, ["windows paths"]);
+    assert.equal(findCommand.opts.repo, "jieli/app");
+
+    const contextB64 = Buffer.from(JSON.stringify({ session_id: "codex-1", transcript_path: "/tmp/session.jsonl", cwd: "/repo" }), "utf8").toString("base64");
+    const handoffCommand = runtime.createCommandRuntime("handoff-info", ["--context-b64", contextB64]);
+    assert.equal(handoffCommand.name, "handoff-info");
+    assert.equal(handoffCommand.baseUrl, "https://jieli.example.test");
+    assert.equal(handoffCommand.apiKey, "");
+    assert.equal(handoffCommand.handoffContextB64, contextB64);
+  });
+});
+
+test("shell hook contract normalizes macOS and Windows command inputs", () => {
+  const codexMac = runtime.normalizeShellHook({ session_id: "codex-mac", transcript_path: "/tmp/a.jsonl", cwd: "/repo", tool_name: "exec_command", tool_input: { cmd: "jieli-handoff-info" } });
+  assert.equal(codexMac.commandKey, "cmd");
+  assert.equal(codexMac.command, "jieli-handoff-info");
+  assert.deepEqual(runtime.buildUpdatedHookInput(codexMac, "node helper"), { cmd: "node helper" });
+
+  const codexWindows = runtime.normalizeShellHook({ session_id: "codex-win", session_path: "C:\\Users\\Administrator\\.codex\\sessions\\rollout.jsonl", cwd: "C:\\repo", tool_name: "Shell", tool_input: { command: "& 'C:\\Users\\Administrator\\.codex\\plugins\\cache\\jieliapp\\jieli\\bin\\jieli-handoff-info.cmd'" } });
+  assert.equal(codexWindows.commandKey, "command");
+  assert.match(codexWindows.command, /jieli-handoff-info\.cmd/);
+  assert.equal(codexWindows.transcriptPath, "C:\\Users\\Administrator\\.codex\\sessions\\rollout.jsonl");
+});
+
 test("redaction covers Codex payload secrets and malformed URL regressions", () => {
   const fakeKey = `jieli_${"a".repeat(30)}`;
   const redacted = runtime.redactText(`connect https://user:secret@example.com:notaport/path?token=query-secret and ${fakeKey}`);
@@ -496,6 +535,15 @@ test("handoff info and commit trailer helpers support Codex shell aliases and No
   assert.equal(cliInfo.thread_id, "T-stable-codex-id");
   assert.deepEqual(runtime.buildHookResponse({ session_id: "codex-handoff", tool_name: "Bash", tool_input: { command: "jieli-handoff-info | cat" } }), {});
 
+  await withEnv({ HOME: tmp, JIELI_HANDOFF_CONTEXT_B64: undefined, JIELI_BASE_URL: "https://jieli.example.test" }, async () => {
+    runtime.writeHandoffContext({ session_id: "hook-state", transcript_path: transcript, cwd: "/wrong" });
+    const stateInfo = runtime.buildHandoffInfo();
+    assert.equal(stateInfo.confidence, "high");
+    assert.equal(stateInfo.session_id, "stable-codex-id");
+    assert.equal(stateInfo.thread_id, "T-stable-codex-id");
+    assert.equal(stateInfo.reason, "hook context persisted by Codex hook");
+  });
+
   await withEnv({ HOME: tmp }, async () => {
     mkdirSync(join(tmp, ".jieli"), { recursive: true });
     writeFileSync(join(tmp, ".jieli", "codex-sessions.json"), JSON.stringify({ "codex-chain": { provider_thread_id: "T-codex-chain", base_url: "https://jieli.example.test" } }), "utf8");
@@ -532,9 +580,14 @@ test("plugin wrappers, skills, docs, manifests, and hooks describe the split Jie
   const findSkill = readFileSync(join(pluginRoot, "skills", "jieli-find", "SKILL.md"), "utf8");
   const handoffSkill = readFileSync(join(pluginRoot, "skills", "handoff", "SKILL.md"), "utf8");
   assert.match(readSkill, /name: jieli-read/);
+  assert.match(readSkill, /Codex plugin cache/);
+  assert.match(readSkill, /bin\/jieli-read-thread/);
   assert.match(findSkill, /name: jieli-find/);
   assert.match(findSkill, /Do not pass --provider/);
+  assert.match(findSkill, /Codex plugin cache/);
+  assert.match(findSkill, /bin\/jieli-find-threads/);
   assert.match(handoffSkill, /`jieli-read` skill/);
+  assert.match(handoffSkill, /\.codex", "plugins", "cache"/);
   assert.match(handoffSkill, /os\.tmpdir\(\)/);
   assert.match(handoffSkill, /path\.join\(os\.tmpdir\(\), `handoff-\$\{safe\}\.md`\)/);
   assert.doesNotMatch(handoffSkill, /OUT="\/tmp\/handoff-\$THREAD_ID\.md"/);

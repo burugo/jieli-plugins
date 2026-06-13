@@ -24,7 +24,7 @@ Do not use this skill when the user only gives keywords, repo names, file names,
 
 ## Environment
 
-Use the `jieli-read-thread` command for thread reads. It is installed from the plugin `bin/` directory and resolves the plugin scripts path itself. Do not call plugin scripts by cache path, and do not guess paths such as `skills/jieli/scripts/read_thread.mjs`.
+Use the `jieli-read-thread` command for thread reads. It is installed from the plugin `bin/` directory and resolves the plugin scripts path itself. If the command is not on `PATH`, locate the installed `bin/jieli-read-thread` helper in the Codex plugin cache and run that helper. Do not call plugin scripts by cache path, and do not guess paths such as `skills/jieli/scripts/read_thread.mjs`.
 
 If the API key is missing, ask the user for a Jieli API key and write it to `~/.config/jieli/settings.json` with mode `600`.
 

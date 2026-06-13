@@ -41,6 +41,45 @@ test("runtime entrypoints do not invoke Python", () => {
   assert.doesNotMatch(readFileSync(join(pluginRoot, "scripts", "jieli_node.mjs"), "utf8"), /AbortSignal\.timeout/);
 });
 
+test("helper command runtime contract is stable across OS shells", async () => {
+  const tmp = makeTempDir();
+  await withEnv({ HOME: tmp, JIELI_API_KEY: undefined, JIELI_BASE_URL: undefined, CLAUDE_PLUGIN_OPTION_API_KEY: "jieli_test", CLAUDE_PLUGIN_OPTION_BASE_URL: "https://jieli.example.test/" }, async () => {
+    const readCommand = runtime.createCommandRuntime("read-thread", ["T-1", "--format=json", "--max-chars", "200"]);
+    assert.equal(readCommand.name, "read-thread");
+    assert.equal(readCommand.baseUrl, "https://jieli.example.test");
+    assert.equal(readCommand.apiKey, "jieli_test");
+    assert.deepEqual(readCommand.opts._, ["T-1"]);
+    assert.equal(readCommand.opts.format, "json");
+    assert.equal(readCommand.opts.maxChars, "200");
+
+    const findCommand = runtime.createCommandRuntime("find-threads", ["windows paths", "--repo", "jieli/app"]);
+    assert.equal(findCommand.name, "find-threads");
+    assert.equal(findCommand.baseUrl, "https://jieli.example.test");
+    assert.equal(findCommand.apiKey, "jieli_test");
+    assert.deepEqual(findCommand.opts._, ["windows paths"]);
+    assert.equal(findCommand.opts.repo, "jieli/app");
+
+    const contextB64 = Buffer.from(JSON.stringify({ session_id: "cc-1", transcript_path: "/tmp/session.jsonl", cwd: "/repo" }), "utf8").toString("base64");
+    const handoffCommand = runtime.createCommandRuntime("handoff-info", ["--context-b64", contextB64]);
+    assert.equal(handoffCommand.name, "handoff-info");
+    assert.equal(handoffCommand.baseUrl, "https://jieli.example.test");
+    assert.equal(handoffCommand.apiKey, "");
+    assert.equal(handoffCommand.handoffContextB64, contextB64);
+  });
+});
+
+test("shell hook contract normalizes macOS and Windows command inputs", () => {
+  const claudeMac = runtime.normalizeShellHook({ session_id: "cc-mac", transcript_path: "/tmp/a.jsonl", cwd: "/repo", tool_name: "Bash", tool_input: { command: "jieli-handoff-info" } });
+  assert.equal(claudeMac.commandKey, "command");
+  assert.equal(claudeMac.command, "jieli-handoff-info");
+  assert.deepEqual(runtime.buildUpdatedHookInput(claudeMac, "node helper"), { command: "node helper" });
+
+  const claudeWindows = runtime.normalizeShellHook({ session_id: "cc-win", session_path: "C:\\Users\\Administrator\\.claude\\projects\\session.jsonl", cwd: "C:\\repo", tool_name: "Bash", tool_input: { command: "& 'C:\\Users\\Administrator\\.claude\\plugins\\cache\\jieliapp\\claude-code\\bin\\jieli-handoff-info.cmd'" } });
+  assert.equal(claudeWindows.commandKey, "command");
+  assert.match(claudeWindows.command, /jieli-handoff-info\.cmd/);
+  assert.equal(claudeWindows.transcriptPath, "C:\\Users\\Administrator\\.claude\\projects\\session.jsonl");
+});
+
 test("redaction covers API keys, database credentials, vendor tokens, URLs, JSON keys, and invisible tag chars", () => {
   const fakeJieliKey = "jieli_uTN9dHsMCoOgMPBLRnQq_1JkfimaKU2ZfP";
   const text = [
@@ -629,9 +668,14 @@ test("plugin wrappers, skills, docs, manifests, and hooks describe the split Jie
   const handoffSkill = readFileSync(join(pluginRoot, "skills", "handoff", "SKILL.md"), "utf8");
   assert.match(readSkill, /name: jieli-read/);
   assert.match(readSkill, /jieli-read-thread/);
+  assert.match(readSkill, /Claude Code plugin cache/);
+  assert.match(readSkill, /bin\/jieli-read-thread/);
   assert.match(findSkill, /name: jieli-find/);
   assert.match(findSkill, /Do not pass --provider/);
+  assert.match(findSkill, /Claude Code plugin cache/);
+  assert.match(findSkill, /bin\/jieli-find-threads/);
   assert.match(handoffSkill, /`jieli-read` skill/);
+  assert.match(handoffSkill, /\.claude", "plugins", "cache"/);
   assert.match(handoffSkill, /os\.tmpdir\(\)/);
   assert.match(handoffSkill, /path\.join\(os\.tmpdir\(\), `handoff-\$\{safe\}\.md`\)/);
   assert.doesNotMatch(handoffSkill, /OUT="\/tmp\/handoff-\$THREAD_ID\.md"/);

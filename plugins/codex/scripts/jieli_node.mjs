@@ -25,12 +25,21 @@ const TRANSCRIPT_QUIET_MS = 250;
 const TRANSCRIPT_FLUSH_TIMEOUT_MS = 1500;
 const ATTACHMENT_CACHE_FILE = "codex-attachments.json";
 const SESSION_MAPPING_FILE = "codex-sessions.json";
+const HANDOFF_CONTEXT_FILE = "codex-handoff-context.json";
 const TOOL_OUTPUT_MAX_CHARS = 20000;
 const SETTINGS_FILE_NAME = "settings.json";
 const TRAILER_KEY = "Jieli-Thread";
 const HANDOFF_CONTEXT_ENV = "JIELI_HANDOFF_CONTEXT_B64";
 const HANDOFF_HELPER_COMMAND = "jieli-handoff-info";
 const AMBIGUOUS_TOKENS = ["||", ";", "\n", "$(", "`", "<<", "|"];
+const SHELL_TOOL_NAMES = new Set(["Bash", "Shell", "shell_command", "exec_command"]);
+const CONFIG_BASE_URL_ENV_NAMES = ["JIELI_BASE_URL"];
+const CONFIG_API_KEY_ENV_NAMES = ["JIELI_API_KEY"];
+const HELPER_COMMANDS = {
+  "read-thread": { booleanOptions: ["truncate-tool-results"], needsApiKey: true },
+  "find-threads": { booleanOptions: [], needsApiKey: true },
+  "handoff-info": { booleanOptions: [], needsApiKey: false },
+};
 const MODEL_ALIAS_ENV_NAMES = [
   "ANTHROPIC_DEFAULT_HAIKU_MODEL",
   "ANTHROPIC_DEFAULT_SONNET_MODEL",
@@ -98,6 +107,49 @@ function parseArgs(args, spec = {}) {
   return result;
 }
 
+function createCommandRuntime(name, args = [], env = process.env) {
+  const command = HELPER_COMMANDS[name];
+  if (!command) throw new Error(`unknown helper command: ${name}`);
+  const opts = parseArgs(args, { boolean: new Set(command.booleanOptions || []) });
+  return {
+    name,
+    opts,
+    baseUrl: resolveBaseUrl(env),
+    apiKey: command.needsApiKey ? resolveApiKey(env) : "",
+    handoffContextB64: name === "handoff-info" ? String(opts.contextB64 || env[HANDOFF_CONTEXT_ENV] || "").trim() : "",
+  };
+}
+
+function envValue(env, name) {
+  const value = env?.[name];
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+function resolveBaseUrl(env = process.env, names = CONFIG_BASE_URL_ENV_NAMES) {
+  for (const name of names) {
+    const value = envValue(env, name);
+    if (value) return value.replace(/\/+$/, "");
+  }
+  if (names.includes("JIELI_BASE_URL")) {
+    const value = settingsValue("base_url", "JIELI_BASE_URL");
+    if (value) return value.replace(/\/+$/, "");
+  }
+  return DEFAULT_BASE_URL;
+}
+
+function resolveApiKey(env = process.env, names = CONFIG_API_KEY_ENV_NAMES) {
+  for (const name of names) {
+    const value = envValue(env, name);
+    if (value) return value;
+  }
+  if (names.includes("JIELI_API_KEY")) {
+    const value = settingsValue("api_key", "JIELI_API_KEY");
+    if (value) return value;
+  }
+  const detail = settingsParseError();
+  throw new Error(detail ? `${names[0]} (${detail})` : names[0]);
+}
+
 function readStdin() {
   try {
     return readFileSync(0, "utf8");
@@ -161,12 +213,7 @@ function settingsParseError() {
 }
 
 function requiredEnv(...names) {
-  if (names[0] === "JIELI_API_KEY") {
-    const direct = (process.env.JIELI_API_KEY || "").trim();
-    if (direct) return direct;
-    const value = settingsValue("api_key", "JIELI_API_KEY");
-    if (value) return value;
-  }
+  if (names.includes("JIELI_API_KEY")) return resolveApiKey(process.env, names);
   for (const name of names) {
     if (process.env[name]) return process.env[name];
   }
@@ -175,13 +222,7 @@ function requiredEnv(...names) {
 }
 
 function optionalEnv(...names) {
-  if (names[0] === "JIELI_BASE_URL") {
-    const direct = (process.env.JIELI_BASE_URL || "").trim();
-    if (direct) return direct.replace(/\/+$/, "");
-    const value = settingsValue("base_url", "JIELI_BASE_URL");
-    if (value) return value.replace(/\/+$/, "");
-    return DEFAULT_BASE_URL;
-  }
+  if (names.includes("JIELI_BASE_URL")) return resolveBaseUrl(process.env, names);
   for (const name of names) {
     if (process.env[name]) return process.env[name];
   }
@@ -333,13 +374,14 @@ function loadHookStdin() {
 async function syncMain(args) {
   const opts = parseArgs(args, { boolean: new Set(["jieli-hook"]) });
   try {
+    const hookData = loadHookStdin();
+    writeHandoffContext(hookData);
     const missing = missingConfigVars();
     if (missing.length) {
       const response = buildMissingConfigHookResponse(opts.trigger || "", missing);
       if (Object.keys(response).length) console.log(JSON.stringify(response));
       throw new Error(missing.join(", "));
     }
-    const hookData = loadHookStdin();
     const sessionId = hookData.session_id || "";
     const lock = acquireSyncLock(sessionId);
     if (!lock.acquired) return 0;
@@ -1194,7 +1236,9 @@ function commitTrailerMain(args) {
   parseArgs(args, { boolean: new Set(["jieli-hook"]) });
   let response = {};
   try {
-    response = buildHookResponse(JSON.parse(readStdin() || "{}"));
+    const hookData = JSON.parse(readStdin() || "{}");
+    writeHandoffContext(hookData);
+    response = buildHookResponse(hookData);
   } catch {
     response = {};
   }
@@ -1203,20 +1247,44 @@ function commitTrailerMain(args) {
 }
 
 function buildHookResponse(hookData) {
-  if (!["Bash", "Shell", "shell_command", "exec_command"].includes(hookData.tool_name)) return {};
-  const commandKey = typeof hookData.tool_input?.cmd === "string" ? "cmd" : "command";
-  const command = hookData.tool_input?.[commandKey];
-  if (typeof command !== "string" || !command) return {};
-  let updated = updatedHandoffCommand(command, hookData);
-  if (!updated) updated = updatedCommitCommand(command, hookData.session_id || "");
+  const shell = normalizeShellHook(hookData);
+  if (!shell) return {};
+  let updated = updatedHandoffCommand(shell.command, {
+    session_id: shell.sessionId,
+    transcript_path: shell.transcriptPath,
+    cwd: shell.cwd,
+  });
+  if (!updated) updated = updatedCommitCommand(shell.command, shell.sessionId);
   if (!updated) return {};
   return {
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
       permissionDecision: "allow",
-      updatedInput: { [commandKey]: updated },
+      updatedInput: buildUpdatedHookInput(shell, updated),
     },
   };
+}
+
+function normalizeShellHook(hookData, allowedTools = SHELL_TOOL_NAMES) {
+  const toolName = String(hookData?.tool_name || "");
+  if (!allowedTools.has(toolName)) return null;
+  const input = hookData?.tool_input;
+  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
+  const commandKey = typeof input.cmd === "string" ? "cmd" : "command";
+  const command = input[commandKey];
+  if (typeof command !== "string" || !command) return null;
+  return {
+    toolName,
+    commandKey,
+    command,
+    sessionId: String(hookData.session_id || ""),
+    transcriptPath: String(hookData.transcript_path || hookData.session_path || ""),
+    cwd: String(hookData.cwd || ""),
+  };
+}
+
+function buildUpdatedHookInput(shell, updatedCommand) {
+  return { [shell.commandKey || "command"]: updatedCommand };
 }
 
 function updatedHandoffCommand(command, hookData) {
@@ -1414,12 +1482,11 @@ async function readThreadMain(args) {
     console.log("Read a Jieli thread export.");
     return 0;
   }
-  const opts = parseArgs(args, { boolean: new Set(["truncate-tool-results"]) });
-  const threadId = opts._[0] || "";
   try {
-    const baseUrl = optionalEnv("JIELI_BASE_URL") || DEFAULT_BASE_URL;
-    const apiKey = requiredEnv("JIELI_API_KEY");
-    const content = await fetchThreadExport(threadId, baseUrl, apiKey, opts.format || "md", Boolean(opts.truncateToolResults));
+    const command = createCommandRuntime("read-thread", args);
+    const opts = command.opts;
+    const threadId = opts._[0] || "";
+    const content = await fetchThreadExport(threadId, command.baseUrl, command.apiKey, opts.format || "md", Boolean(opts.truncateToolResults));
     process.stdout.write(limitOutput(content, intOpt(opts.startLine), intOpt(opts.endLine), intOpt(opts.maxChars, 12000)));
     return 0;
   } catch (error) {
@@ -1470,13 +1537,12 @@ async function findThreadsMain(args) {
     console.log("Find Jieli threads.");
     return 0;
   }
-  const opts = parseArgs(args);
   try {
-    const baseUrl = optionalEnv("JIELI_BASE_URL") || DEFAULT_BASE_URL;
-    const apiKey = requiredEnv("JIELI_API_KEY");
-    const payload = await fetchThreads(opts._[0] || "", baseUrl, apiKey, opts);
+    const command = createCommandRuntime("find-threads", args);
+    const opts = command.opts;
+    const payload = await fetchThreads(opts._[0] || "", command.baseUrl, command.apiKey, opts);
     if ((opts.format || "markdown") === "json") console.log(JSON.stringify(payload, null, 2));
-    else process.stdout.write(formatThreadsMarkdown(payload, baseUrl));
+    else process.stdout.write(formatThreadsMarkdown(payload, command.baseUrl));
     return 0;
   } catch (error) {
     console.error(`find_threads failed: ${formatError(error)}`);
@@ -1541,14 +1607,14 @@ function handoffInfoMain(args = []) {
     console.log("usage: jieli-handoff-info [--context-b64 CONTEXT]");
     return 0;
   }
-  const opts = parseArgs(args);
-  const info = buildHandoffInfo(process.env, opts.contextB64 || "");
+  const command = createCommandRuntime("handoff-info", args);
+  const info = buildHandoffInfo(process.env, command.handoffContextB64);
   console.log(JSON.stringify(info, Object.keys(info).sort()));
   return 0;
 }
 
 function buildHandoffInfo(env = process.env, contextB64 = "") {
-  const context = decodeContext(contextB64 || env[HANDOFF_CONTEXT_ENV] || "");
+  const context = decodeContext(contextB64 || env[HANDOFF_CONTEXT_ENV] || "") || readHandoffContext();
   if (!context) return missingInfo("missing hook context");
   const transcriptPath = String(context.transcript_path || context.session_path || "").trim();
   const meta = readSessionMeta(transcriptPath);
@@ -1570,7 +1636,35 @@ function buildHandoffInfo(env = process.env, contextB64 = "") {
     repo_url: repoUrlFromCwd(cwd),
     branch: meta.branch || gitBranch(cwd),
     worktree_status: worktreeStatus(cwd),
-    reason: "hook context injected by PreToolUse",
+    reason: context.from_state ? "hook context persisted by Codex hook" : "hook context injected by PreToolUse",
+  };
+}
+
+function writeHandoffContext(hookData) {
+  if (!hookData || typeof hookData !== "object" || Array.isArray(hookData)) return;
+  const sessionId = String(hookData.session_id || "").trim();
+  const transcriptPath = String(hookData.transcript_path || hookData.session_path || "").trim();
+  if (!sessionId && !transcriptPath) return;
+  const context = {
+    session_id: sessionId,
+    transcript_path: transcriptPath,
+    cwd: String(hookData.cwd || "").trim(),
+    updated_at: new Date().toISOString(),
+  };
+  writeJsonAtomic(join(homeDir(), ".jieli", HANDOFF_CONTEXT_FILE), context);
+}
+
+function readHandoffContext() {
+  const context = readJson(join(homeDir(), ".jieli", HANDOFF_CONTEXT_FILE), null);
+  if (!context || typeof context !== "object" || Array.isArray(context)) return null;
+  const sessionId = String(context.session_id || "").trim();
+  const transcriptPath = String(context.transcript_path || context.session_path || "").trim();
+  if (!sessionId && !transcriptPath) return null;
+  return {
+    session_id: sessionId,
+    transcript_path: transcriptPath,
+    cwd: String(context.cwd || "").trim(),
+    from_state: true,
   };
 }
 
@@ -1649,7 +1743,9 @@ export {
   buildHandoffInfo,
   buildHookResponse,
   buildMissingConfigHookResponse,
+  buildUpdatedHookInput,
   buildPayloadFromHook,
+  createCommandRuntime,
   fetchThreadExport,
   fetchThreads,
   findSessionTranscript,
@@ -1658,6 +1754,7 @@ export {
   isSecretFilePath,
   limitOutput,
   missingConfigVars,
+  normalizeShellHook,
   optionalEnv,
   parseTranscript,
   readJson,
@@ -1670,6 +1767,7 @@ export {
   uploadPayload,
   validateThreadId,
   waitForTranscriptFlush,
+  writeHandoffContext,
   writeSessionMapping,
 };
 

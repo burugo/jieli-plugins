@@ -24,7 +24,7 @@ Do not use this skill when the user already supplied a specific Jieli thread id 
 
 ## Environment
 
-Use the `jieli-find-threads` command for thread search. It is installed from the plugin `bin/` directory and resolves the plugin scripts path itself. Do not duplicate raw `curl` calls unless you are diagnosing the helper.
+Use the `jieli-find-threads` command for thread search. It is installed from the plugin `bin/` directory and resolves the plugin scripts path itself. If the command is not on `PATH`, locate the installed `bin/jieli-find-threads` helper in the Claude Code plugin cache and run that helper. Do not duplicate raw `curl` calls unless you are diagnosing the helper.
 
 If the API key is missing, ask the user to configure the plugin, export `JIELI_API_KEY`, or write `~/.config/jieli/settings.json`.
 
