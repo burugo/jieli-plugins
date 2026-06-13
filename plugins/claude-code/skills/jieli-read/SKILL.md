@@ -24,7 +24,7 @@ Do not use this skill when the user only gives keywords, repo names, file names,
 
 ## Environment
 
-Use the `jieli-read-thread` command for thread reads. It is installed from the plugin `bin/` directory and resolves the plugin scripts path itself. If the command is not on `PATH`, locate the installed `bin/jieli-read-thread` helper in the Claude Code plugin cache and run that helper. Do not call plugin scripts by cache path, and do not guess paths such as `skills/jieli/scripts/read_thread.mjs`.
+Use the `jieli-read-thread` command for thread reads. It is installed from the plugin `bin/` directory and resolves the plugin scripts path itself. If the command is not on `PATH`, resolve `../../scripts/jieli_helper.mjs` relative to this `SKILL.md` file and run `node <resolved-skill-dir>/../../scripts/jieli_helper.mjs read-thread ...`. Do not call plugin scripts by cache path, enumerate installed helpers, or choose wrapper files in this skill.
 
 If the API key is missing, ask the user to configure the plugin, export `JIELI_API_KEY`, or write `~/.config/jieli/settings.json`.
 

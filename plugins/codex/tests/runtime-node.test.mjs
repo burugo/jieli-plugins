@@ -580,17 +580,42 @@ test("plugin wrappers, skills, docs, manifests, and hooks describe the split Jie
   const findSkill = readFileSync(join(pluginRoot, "skills", "jieli-find", "SKILL.md"), "utf8");
   const handoffSkill = readFileSync(join(pluginRoot, "skills", "handoff", "SKILL.md"), "utf8");
   assert.match(readSkill, /name: jieli-read/);
-  assert.match(readSkill, /Codex plugin cache/);
-  assert.match(readSkill, /bin\/jieli-read-thread/);
+  assert.match(readSkill, /jieli_helper\.mjs read-thread/);
   assert.match(findSkill, /name: jieli-find/);
   assert.match(findSkill, /Do not pass --provider/);
-  assert.match(findSkill, /Codex plugin cache/);
-  assert.match(findSkill, /bin\/jieli-find-threads/);
+  assert.match(findSkill, /jieli_helper\.mjs find-threads/);
   assert.match(handoffSkill, /`jieli-read` skill/);
-  assert.match(handoffSkill, /\.codex", "plugins", "cache"/);
+  assert.match(handoffSkill, /jieli_helper\.mjs handoff-info/);
+  assert.doesNotMatch(handoffSkill, /node <<'JS'[\s\S]*readdirSync/);
   assert.match(handoffSkill, /os\.tmpdir\(\)/);
   assert.match(handoffSkill, /path\.join\(os\.tmpdir\(\), `handoff-\$\{safe\}\.md`\)/);
   assert.doesNotMatch(handoffSkill, /OUT="\/tmp\/handoff-\$THREAD_ID\.md"/);
+  assert.doesNotMatch([readSkill, findSkill, handoffSkill].join("\n"), /\.cmd|helpers\.sort|mtimeMs/);
+
+  const fallbackHelper = join(pluginRoot, "scripts", "jieli_helper.mjs");
+  const fallbackHelperSource = readFileSync(fallbackHelper, "utf8");
+  assert.match(fallbackHelperSource, /import \{ main \} from "\.\/jieli_node\.mjs"/);
+  assert.doesNotMatch(fallbackHelperSource, /child_process|readdirSync|\.cmd/);
+  for (const [command, expected] of [
+    ["read-thread", /Read a Jieli thread export/],
+    ["find-threads", /Find Jieli threads/],
+    ["handoff-info", /usage: jieli-handoff-info/],
+  ]) {
+    const result = spawnSync(process.execPath, [fallbackHelper, command, "--help"], { env: {}, encoding: "utf8", timeout: 5000 });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, expected);
+  }
+  const fallbackTmp = makeTempDir();
+  const fallbackTranscript = join(fallbackTmp, "rollout.jsonl");
+  writeJsonl(fallbackTranscript, [{ type: "session_meta", payload: { id: "skill-fallback-codex", cwd: "/repo", git: { branch: "skill-fallback" } } }]);
+  const fallbackContext = Buffer.from(JSON.stringify({ session_id: "hook-id", transcript_path: fallbackTranscript, cwd: "/wrong" }), "utf8").toString("base64");
+  const fallbackResult = spawnSync(process.execPath, [fallbackHelper, "handoff-info", "--context-b64", fallbackContext], {
+    env: { HOME: fallbackTmp, JIELI_BASE_URL: "https://jieli.example.test" },
+    encoding: "utf8",
+    timeout: 5000,
+  });
+  assert.equal(fallbackResult.status, 0, fallbackResult.stderr);
+  assert.equal(JSON.parse(fallbackResult.stdout).thread_id, "T-skill-fallback-codex");
 
   const docs = [
     readFileSync(join(repoRoot, "README.md"), "utf8"),

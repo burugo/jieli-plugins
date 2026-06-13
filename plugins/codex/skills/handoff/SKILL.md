@@ -32,49 +32,13 @@ Run the helper exactly as a plain command so the `PreToolUse` hook can inject th
 jieli-handoff-info
 ```
 
-If that command is not found or does not print valid JSON, locate and run the installed helper from the Codex plugin cache instead of guessing a thread id:
+If that command is not found or does not print valid JSON, resolve `../../scripts/jieli_helper.mjs` relative to this `SKILL.md` file and run the bundled fallback helper:
 
 ```bash
-node <<'JS'
-const fs = require("node:fs");
-const os = require("node:os");
-const path = require("node:path");
-const { spawnSync } = require("node:child_process");
-
-const roots = [
-  path.join(os.homedir(), ".codex", "plugins", "cache", "jieliapp"),
-  path.join(os.homedir(), ".codex", "plugins", "cache", "jieli"),
-];
-const helpers = [];
-function walk(dir) {
-  let entries = [];
-  try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
-    const file = path.join(dir, entry.name);
-    if (entry.isDirectory()) walk(file);
-    else if (entry.name === "jieli-handoff-info" || entry.name === "jieli-handoff-info.cmd") helpers.push(file);
-  }
-}
-for (const root of roots) walk(root);
-helpers.sort((a, b) => {
-  try {
-    return fs.statSync(a).mtimeMs - fs.statSync(b).mtimeMs;
-  } catch {
-    return a.localeCompare(b);
-  }
-});
-const helper = helpers[helpers.length - 1];
-if (!helper) process.exit(127);
-const result = spawnSync(helper, [], { encoding: "utf8" });
-process.stdout.write(result.stdout || "");
-process.stderr.write(result.stderr || "");
-process.exit(result.status ?? 1);
-JS
+node <resolved-skill-dir>/../../scripts/jieli_helper.mjs handoff-info
 ```
+
+The fallback is a single Node entrypoint that loads the plugin runtime directly. Do not enumerate plugin cache directories, choose wrapper files, or sort installed helpers in this skill.
 
 Expected JSON shape:
 
