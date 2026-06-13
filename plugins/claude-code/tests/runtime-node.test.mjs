@@ -623,7 +623,9 @@ test("plugin wrappers, skills, docs, manifests, and hooks describe the split Jie
   assert.match(findSkill, /name: jieli-find/);
   assert.match(findSkill, /Do not pass --provider/);
   assert.match(handoffSkill, /`jieli-read` skill/);
-  assert.match(handoffSkill, /OUT="\/tmp\/handoff-\$THREAD_ID\.md"/);
+  assert.match(handoffSkill, /os\.tmpdir\(\)/);
+  assert.match(handoffSkill, /path\.join\(os\.tmpdir\(\), `handoff-\$\{safe\}\.md`\)/);
+  assert.doesNotMatch(handoffSkill, /OUT="\/tmp\/handoff-\$THREAD_ID\.md"/);
 
   const docs = [
     readFileSync(join(repoRoot, "README.md"), "utf8"),

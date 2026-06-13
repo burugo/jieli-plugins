@@ -113,25 +113,33 @@ Current Jieli thread could not be identified automatically; ask the user for the
 
 Write the full handoff prompt to a temp file, but do not print the full prompt in your reply:
 
-- With a thread id: `OUT="/tmp/handoff-$THREAD_ID.md"`
-- Without a thread id: derive a short slug from the user goal if present, otherwise from the handoff summary title, and use `OUT="/tmp/handoff-$SLUG.md"`.
+- With a thread id: use `handoff-<THREAD_ID>.md`.
+- Without a thread id: derive a short slug from the user goal if present, otherwise from the handoff summary title, and use `handoff-<SLUG>.md`.
+- Always place the file under Node's `os.tmpdir()` via `path.join(os.tmpdir(), filename)`. Do not hard-code `/tmp`, because Windows agents need a platform-native temp directory.
 
-Use a safe writer, for example Node, so prompt content cannot break a shell here-doc:
+Use a safe writer, for example Node, so prompt content cannot break a shell here-doc and the temp path stays cross-platform:
 
 ```bash
-node - "$OUT" <<'JS'
+node <<'JS'
 const fs = require("node:fs");
-fs.writeFileSync(process.argv[2], `<assembled handoff prompt>
+const os = require("node:os");
+const path = require("node:path");
+
+const idOrSlug = "<THREAD_ID_OR_SLUG>";
+const safe = idOrSlug.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "handoff";
+const out = path.join(os.tmpdir(), `handoff-${safe}.md`);
+
+fs.writeFileSync(out, `<assembled handoff prompt>
 `, "utf8");
+console.log(`Wrote handoff to ${out}`);
 JS
-echo "Wrote handoff to $OUT"
 ```
 
 Then reply with only a brief summary: the saved file path, whether a thread id was included, the relevant files count/list, and the next goal. Do not include the full handoff prompt unless the user explicitly asks to print it.
 
 ## Output
 
-- The full ready-to-paste handoff prompt saved to `$OUT`.
+- The full ready-to-paste handoff prompt saved to the temp path printed by the Node writer.
 - A brief reply summary with the saved path and key metadata, not the full handoff content.
 - If a thread id is available, the next agent can use the `jieli-read` skill to read `<THREAD_ID>` for the full transcript.
 
