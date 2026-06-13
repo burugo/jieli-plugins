@@ -18,6 +18,7 @@
     "longDescription": "Jieli Sync uploads local Codex session transcripts to Jieli, redacts common secrets, provides jieli-read and jieli-find skills, and adds best-effort Jieli-Thread trailers to Codex-created git commits.",
     "developerName": "Jieli",
     "category": "Productivity",
+    "websiteURL": "https://jieli.app",
     "brandColor": "#ffd21a",
     "composerIcon": "./assets/icon.png",
     "logo": "./assets/logo.png",
