@@ -30,8 +30,6 @@ test("runtime entrypoints do not invoke Python", () => {
   const files = [
     "hooks/hooks.json",
     ...readdirSync(join(pluginRoot, "bin")).map((name) => `bin/${name}`),
-    "skills/jieli-read/SKILL.md",
-    "skills/jieli-find/SKILL.md",
   ];
 
   for (const file of files) {
@@ -578,7 +576,7 @@ test("handoff info and commit trailer helpers support Codex shell aliases and No
   });
 });
 
-test("plugin wrappers, skills, docs, manifests, and hooks describe the split Jieli tools", () => {
+test("plugin wrappers, docs, manifests, and hooks describe the split Jieli tools", () => {
   for (const [wrapperName, scriptName] of Object.entries({
     "jieli-handoff-info.cmd": "handoff_info.mjs",
     "jieli-read-thread.cmd": "read_thread.mjs",
@@ -595,22 +593,6 @@ test("plugin wrappers, skills, docs, manifests, and hooks describe the split Jie
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /Jieli|usage:/);
   }
-
-  const readSkill = readFileSync(join(pluginRoot, "skills", "jieli-read", "SKILL.md"), "utf8");
-  const findSkill = readFileSync(join(pluginRoot, "skills", "jieli-find", "SKILL.md"), "utf8");
-  const handoffSkill = readFileSync(join(pluginRoot, "skills", "handoff", "SKILL.md"), "utf8");
-  assert.match(readSkill, /name: jieli-read/);
-  assert.match(readSkill, /jieli_helper\.mjs read-thread/);
-  assert.match(findSkill, /name: jieli-find/);
-  assert.match(findSkill, /Do not pass --provider/);
-  assert.match(findSkill, /jieli_helper\.mjs find-threads/);
-  assert.match(handoffSkill, /`jieli-read` skill/);
-  assert.match(handoffSkill, /jieli_helper\.mjs handoff-info/);
-  assert.doesNotMatch(handoffSkill, /node <<'JS'[\s\S]*readdirSync/);
-  assert.match(handoffSkill, /os\.tmpdir\(\)/);
-  assert.match(handoffSkill, /path\.join\(os\.tmpdir\(\), `handoff-\$\{safe\}\.md`\)/);
-  assert.doesNotMatch(handoffSkill, /OUT="\/tmp\/handoff-\$THREAD_ID\.md"/);
-  assert.doesNotMatch([readSkill, findSkill, handoffSkill].join("\n"), /\.cmd|helpers\.sort|mtimeMs/);
 
   const fallbackHelper = join(pluginRoot, "scripts", "jieli_helper.mjs");
   const fallbackHelperSource = readFileSync(fallbackHelper, "utf8");
