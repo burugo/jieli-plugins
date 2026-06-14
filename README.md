@@ -87,6 +87,19 @@ export JIELI_API_KEY="your-jieli-api-key"
 - Provides the `jieli-find` skill for searching synced Jieli threads by keywords, repo, file, topic, or clues.
 - Redacts common secrets before upload.
 
+## Redaction
+
+Secrets are redacted locally before anything is uploaded. Each match is replaced
+with a typed marker like `[REDACTED:openai-api-key]`, so the conversation stays
+readable while the secret value is gone.
+
+Covered: vendor API keys and tokens, private keys, JWTs, `Bearer` headers,
+credentials in connection URLs, and sensitive `KEY=value` assignments in
+env/JSON/YAML. Base64 image data is left intact.
+
+This is best-effort pattern matching, not a guarantee. See the patterns in
+`plugins/*/scripts/jieli_node.mjs` (covered by `make test`).
+
 ## Development
 
 ```bash
